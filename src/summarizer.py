@@ -4,15 +4,16 @@
 """
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
-import yaml
 from dotenv import load_dotenv
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 # โหลด .env
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -44,8 +45,10 @@ def load_prompt_template(path: str = None) -> str:
 
 
 def init_llm_client(config: dict) -> OpenAI:
-    """สร้าง OpenAI client จาก config"""
-    api_key = os.environ.get("SIAM_AI_API_KEY", os.environ.get("OPENAI_API_KEY", "sk-placeholder"))
+    """สร้าง OpenAI client จาก config — fail ถ้าไม่มี API key"""
+    api_key = os.environ.get("SIAM_AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("Missing API key: set SIAM_AI_API_KEY or OPENAI_API_KEY in .env")
     kwargs = {"api_key": api_key}
     if base_url := config.get("base_url"):
         kwargs["base_url"] = base_url
@@ -53,7 +56,7 @@ def init_llm_client(config: dict) -> OpenAI:
 
 
 def categorize_papers(papers: list[RankedPaper]) -> dict:
-    """จัดหมวดหมู่ papers ตาม score"""
+    """จัดหมวดหมู่ papers ตาม score — paper อยู่ได้หลายหมวด"""
     categories = {
         "must_read": [],    # score > 0.8
         "worth_reading": [],  # 0.5-0.8
@@ -61,12 +64,15 @@ def categorize_papers(papers: list[RankedPaper]) -> dict:
     }
 
     for p in papers:
-        if any(t in p.topics for t in ["tool", "framework", "benchmark", "library", "release"]):
-            categories["tools"].append(p)
-        elif p.score > 0.8:
+        is_tool = any(t in p.topics for t in ["tool", "framework", "benchmark", "library", "release"])
+
+        if p.score > 0.8:
             categories["must_read"].append(p)
-        else:
+        elif p.score >= 0.5:
             categories["worth_reading"].append(p)
+
+        if is_tool:
+            categories["tools"].append(p)
 
     return categories
 
@@ -93,10 +99,11 @@ def summarize_batch(
     # Convert to RankedPaper
     ranked_papers = []
     for p in papers:
+        abstract = p.get("abstract") or ""
         ranked_papers.append(RankedPaper(
             id=p.get("id", ""),
             title=p.get("title", ""),
-            abstract=p.get("abstract", ""),
+            abstract=abstract,
             authors=p.get("authors", []),
             url=p.get("url", ""),
             score=p.get("score", 0.0),
@@ -110,41 +117,43 @@ def summarize_batch(
     # Categorize
     categories = categorize_papers(ranked_papers)
 
-    # Build paper summary for LLM
+    # Build paper summary for LLM — ใส่ ... เฉพาะตอนตัดจริง
     papers_text = ""
     for i, p in enumerate(ranked_papers, 1):
+        abstract_text = p.abstract[:500]
+        if len(p.abstract) > 500:
+            abstract_text += "..."
         papers_text += f"\n---\nPaper {i}:\n"
         papers_text += f"Title: {p.title}\n"
-        papers_text += f"Abstract: {p.abstract[:500]}...\n"
+        papers_text += f"Abstract: {abstract_text}\n"
         papers_text += f"URL: {p.url}\n"
         papers_text += f"Relevance Score: {p.score}\n"
         papers_text += f"Topics: {', '.join(p.topics)}\n"
 
     # Call LLM
     today = date.today().isoformat()
-    client = init_llm_client(llm_config)
-
-    user_message = f"""Date: {today}
-
-Papers to summarize:
-
-{papers_text}
-
-Create the digest now."""
+    digest_content = None
 
     try:
+        client = init_llm_client(llm_config)
         response = client.chat.completions.create(
             model=llm_config.get("model", "gpt-4o-mini"),
             messages=[
                 {"role": "system", "content": prompt_template},
-                {"role": "user", "content": user_message},
+                {"role": "user", "content": f"Date: {today}\n\nPapers to summarize:\n\n{papers_text}\n\nCreate the digest now."},
             ],
             temperature=0.3,
             max_tokens=2000,
         )
         digest_content = response.choices[0].message.content
+    except ValueError as e:
+        logger.error(f"LLM client init failed: {e}")
     except Exception as e:
-        # Fallback: สร้าง digest แบบ manual ถ้า LLM ไม่ได้
+        logger.error(f"LLM summarization failed: {e}")
+
+    # Fallback: สร้าง digest แบบ manual ถ้า LLM ไม่ได้
+    if digest_content is None:
+        logger.info("Using manual digest fallback")
         digest_content = _manual_digest(categories, today)
 
     stats = {
@@ -186,6 +195,8 @@ def _manual_digest(categories: dict, today: str) -> str:
 # --- CLI for testing ---
 if __name__ == "__main__":
     import sys
+
+    import yaml
 
     # รับ papers จาก stdin หรือไฟล์
     if len(sys.argv) > 1:
@@ -237,6 +248,7 @@ if __name__ == "__main__":
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
+    logging.basicConfig(level=logging.INFO)
     result = summarize_batch(papers, config.get("llm", {}))
     print(result.digest)
     print(f"\n📊 Stats: {json.dumps(result.stats, indent=2)}")

@@ -4,17 +4,36 @@
 """
 
 import json
+import logging
 import os
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from urllib.parse import urlparse
 
 import requests
-import yaml
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # โหลด .env
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+# Allowed webhook domains
+ALLOWED_WEBHOOK_DOMAINS = {
+    "discord.com",
+    "discordapp.com",
+    "hooks.slack.com",
+    "hooks.githubusercontent.com",
+}
+
+
+def _validate_webhook_url(url: str) -> bool:
+    """ตรวจ webhook URL ว่าเป็น domain ที่อนุญาต (ป้องกัน SSRF)"""
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ("https",) and parsed.hostname in ALLOWED_WEBHOOK_DOMAINS
+    except Exception:
+        return False
 
 
 def publish_digest(
@@ -43,15 +62,24 @@ def publish_digest(
         results["file"] = str(path)
 
     # 2. Send to Slack
-    if webhook := delivery.get("slack", {}).get("webhook"):
-        ok = _send_slack(webhook, digest_content, stats)
-        results["slack"] = "sent" if ok else "failed"
+    slack_webhook = delivery.get("slack", {}).get("webhook") or os.environ.get("SLACK_WEBHOOK")
+    if slack_webhook:
+        if not _validate_webhook_url(slack_webhook):
+            logger.error(f"Invalid Slack webhook URL (domain not allowed): {slack_webhook}")
+            results["slack"] = "failed: invalid URL"
+        else:
+            ok = _send_slack(slack_webhook, digest_content, stats)
+            results["slack"] = "sent" if ok else "failed"
 
     # 3. Send to Discord
     discord_webhook = delivery.get("discord", {}).get("webhook") or os.environ.get("DISCORD_WEBHOOK")
     if discord_webhook:
-        ok = _send_discord(discord_webhook, digest_content, stats)
-        results["discord"] = "sent" if ok else "failed"
+        if not _validate_webhook_url(discord_webhook):
+            logger.error(f"Invalid Discord webhook URL (domain not allowed): {discord_webhook}")
+            results["discord"] = "failed: invalid URL"
+        else:
+            ok = _send_discord(discord_webhook, digest_content, stats)
+            results["discord"] = "sent" if ok else "failed"
 
     return results
 
@@ -97,27 +125,39 @@ def _send_slack(webhook_url: str, content: str, stats: dict) -> bool:
             ],
         }
         resp = requests.post(webhook_url, json=payload, timeout=10)
+        if resp.status_code != 200:
+            logger.error(f"Slack webhook failed: status={resp.status_code}, body={resp.text[:200]}")
         return resp.status_code == 200
-    except Exception:
+    except requests.RequestException as e:
+        logger.error(f"Slack webhook error: {e}")
         return False
 
 
 def _send_discord(webhook_url: str, content: str, stats: dict) -> bool:
     """ส่ง digest ไป Discord webhook"""
     try:
-        # Discord supports markdown
-        payload = {
-            "content": f"📰 **Paper Lead — Daily AI Research Digest**\n{content[:1900]}",  # Discord 2000 char limit
-        }
+        prefix = "📰 **Paper Lead — Daily AI Research Digest**\n"
+        # Discord 2000 char limit — คิด prefix length ด้วย
+        max_content = 2000 - len(prefix)
+        truncated = content[:max_content]
+        if len(content) > max_content:
+            truncated = truncated.rstrip() + "\n...(truncated)"
+
+        payload = {"content": prefix + truncated}
         resp = requests.post(webhook_url, json=payload, timeout=10)
+        if resp.status_code != 204:
+            logger.error(f"Discord webhook failed: status={resp.status_code}, body={resp.text[:200]}")
         return resp.status_code == 204
-    except Exception:
+    except requests.RequestException as e:
+        logger.error(f"Discord webhook error: {e}")
         return False
 
 
 # --- CLI for testing ---
 if __name__ == "__main__":
     import sys
+
+    import yaml
 
     # รับ digest จากไฟล์หรือ stdin
     if len(sys.argv) > 1:
@@ -130,6 +170,7 @@ if __name__ == "__main__":
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
+    logging.basicConfig(level=logging.INFO)
     stats = {"total_fetched": 87, "total_filtered": 12, "must_read": 2, "worth_reading": 7, "tools": 3}
     results = publish_digest(digest_content, stats, config)
     print(f"Published: {json.dumps(results, indent=2)}")
