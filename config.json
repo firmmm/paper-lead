@@ -3,13 +3,26 @@
   "max_results": 100,
   "date_from": "2026-06-17",
   "hf_date": "2026-06-18",
-  "min_score": 0.3,
+  "min_score": 0.1,
   "db_path": "data/paper_lead.sqlite3",
   "interests": {
-    "agents": ["agent", "tool use", "planning", "workflow"],
-    "rag": ["rag", "retrieval", "reranking"],
-    "multimodal": ["multimodal", "vision language", "image"],
-    "efficiency": ["quantization", "distillation", "pruning"],
-    "architecture": ["transformer", "attention", "mixture of experts", "moe"]
+    "agents": ["agent", "tool use", "planning", "workflow", "function calling"],
+    "rag": ["rag", "retrieval", "reranking", "vector database"],
+    "multimodal": ["multimodal", "vision language", "image", "audio", "vlm"],
+    "efficiency": ["quantization", "distillation", "pruning", "efficiency", "compression"],
+    "architecture": ["transformer", "attention", "mixture of experts", "moe", "ssm", "mamba"],
+    "training": ["fine-tuning", "pretraining", "alignment", "rlhf", "dpo", "lora"],
+    "inference": ["inference", "serving", "latency", "throughput", "kv cache"]
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "GEMMA-4",
+    "base_url": "https://gateway-llm.siam.ai"
+  },
+  "delivery": {
+    "file": true
+  },
+  "digest": {
+    "output_dir": "digest"
   }
 }
