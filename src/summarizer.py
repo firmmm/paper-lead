@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+from dotenv import load_dotenv
 from openai import OpenAI
+
+# โหลด .env
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 @dataclass
