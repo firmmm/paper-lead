@@ -1,0 +1,47 @@
+# Paper Lead Configuration
+
+sources:
+  arxiv:
+    categories:
+      - cs.AI
+      - cs.CL
+      - cs.LG
+    max_results: 50  # ดึงมากสุดต่อวัน
+
+  huggingface:
+    daily_papers: true
+    max_results: 30
+
+interests:
+  - LLM efficiency & quantization
+  - RAG & retrieval
+  - Thai NLP
+  - Agent frameworks
+  - Evaluation & benchmarking
+  - Fine-tuning & PEFT
+  - Multimodal models
+
+# Relevance threshold (0-1) — ต่ำกว่านี้ไม่ส่ง
+min_score: 0.5
+
+# LLM สำหรับสรุป
+llm:
+  provider: openai       # openai | anthropic | local
+  model: gpt-4o-mini     # หรือโมเดลอื่น
+  # base_url: http://localhost:4000  # ถ้าใช้ LiteLLM proxy
+
+# Digest output
+digest:
+  format: markdown
+  output_dir: digest/
+
+# Delivery (เลือกอย่างใดอย่างหนึ่ง)
+delivery:
+  # slack:
+  #   webhook: https://hooks.slack.com/...
+  # discord:
+  #   webhook: https://discord.com/api/webhooks/...
+  file: true  # บันทึกลงไฟล์ใน digest/
+
+# SQLite สำหรับเก็บประวัติ (ไม่ส่งซ้ำ)
+database: paper_lead.db
