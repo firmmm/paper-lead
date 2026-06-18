@@ -29,7 +29,11 @@ class Config:
     hf_date: str = ""
     min_score: float = 0.3
     db_path: str = "data/paper_lead.sqlite3"
-    llm: dict = field(default_factory=dict)
+    llm: dict = field(default_factory=lambda: {
+        "provider": "openai",
+        "model": "GEMMA-4",
+        "base_url": "https://gateway-llm.siam.ai",
+    })
     delivery: dict = field(default_factory=dict)
     digest: dict = field(default_factory=dict)
     interests: dict = field(
