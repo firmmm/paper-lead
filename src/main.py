@@ -1,16 +1,14 @@
-"""Paper Lead — Main Orchestrator
+"""Paper Lead - Main Orchestrator
 
-เชื่อม Track A (fetcher + ranker) กับ Track B (summarizer + publisher)
+Connects Track A (fetcher + ranker) with Track B (summarizer + publisher)
 """
 
 import argparse
 import json
 import logging
-import sys
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -31,15 +29,9 @@ class Config:
     hf_date: str = ""
     min_score: float = 0.3
     db_path: str = "data/paper_lead.sqlite3"
-
-    # LLM config (Track B)
     llm: dict = field(default_factory=dict)
-
-    # Delivery config (Track B)
     delivery: dict = field(default_factory=dict)
     digest: dict = field(default_factory=dict)
-
-    # Interests
     interests: dict = field(
         default_factory=lambda: {
             "agents": ["agent", "tool use", "planning", "workflow", "function calling"],
@@ -60,7 +52,7 @@ def _parse_date(value: str | None) -> date | None:
 
 
 def load_config(path: str | None = None) -> Config:
-    """โหลด config จาก YAML or JSON"""
+    """Load config from YAML or JSON"""
     cfg = Config()
     if not path:
         return cfg
@@ -79,7 +71,7 @@ def load_config(path: str | None = None) -> Config:
 
 
 def fetch_all_papers(config: Config) -> list[Paper]:
-    """ดึง papers จาก arXiv + HuggingFace"""
+    """Fetch papers from arXiv + HuggingFace"""
     date_from = _parse_date(config.date_from) or (date.today() - timedelta(days=1))
     hf_date = _parse_date(config.hf_date) or date.today()
 
@@ -90,7 +82,7 @@ def fetch_all_papers(config: Config) -> list[Paper]:
     )
     hf_papers = fetcher.fetch_huggingface_daily(hf_date)
 
-    # Merge — deduplicate by paper id
+    # Merge - deduplicate by paper id
     merged: dict[str, Paper] = {p.id: p for p in arxiv_papers}
     for p in hf_papers:
         merged.setdefault(p.id, p)
@@ -98,7 +90,7 @@ def fetch_all_papers(config: Config) -> list[Paper]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="📰 Paper Lead — AI Research Digest Agent")
+    parser = argparse.ArgumentParser(description="Paper Lead - AI Research Digest Agent")
     parser.add_argument("--config", default=None, help="Path to config.yaml or config.json")
     parser.add_argument("--date", default=None, help="Date to fetch (YYYY-MM-DD), default: yesterday")
     parser.add_argument("--dry-run", action="store_true", help="Print digest without saving")
@@ -123,7 +115,7 @@ def main():
         config.hf_date = date.today().isoformat()
 
     # Step 1: Fetch & Rank (Track A)
-    logger.info(f"📰 Fetching papers from {config.date_from}...")
+    logger.info(f"Fetching papers from {config.date_from}...")
     all_papers = fetch_all_papers(config)
     logger.info(f"   Fetched {len(all_papers)} papers")
 
@@ -155,7 +147,7 @@ def main():
 
     # Step 2: Summarize (Track B)
     papers_dicts = [p.to_dict() for p in ranked_papers]
-    logger.info("🤖 Summarizing with LLM...")
+    logger.info("Summarizing with LLM...")
     result = summarize_batch(papers_dicts, config.llm)
 
     # Step 3: Publish (Track B)
@@ -163,15 +155,14 @@ def main():
         print("\n" + "=" * 60)
         print(result.digest)
         print("=" * 60)
-        print(f"📊 Stats: {json.dumps(result.stats, indent=2)}")
+        print(f"Stats: {json.dumps(result.stats, indent=2)}")
     else:
-        # Merge config for publisher
         pub_config = {
             "delivery": config.delivery,
             "digest": config.digest,
         }
         results = publish_digest(result.digest, result.stats, pub_config)
-        logger.info(f"✅ Published to: {json.dumps(results, indent=2)}")
+        logger.info(f"Published to: {json.dumps(results, indent=2)}")
 
     # Step 4: Mark seen in DB
     for paper in ranked_papers:

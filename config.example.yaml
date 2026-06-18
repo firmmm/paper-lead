@@ -6,7 +6,7 @@ sources:
       - cs.AI
       - cs.CL
       - cs.LG
-    max_results: 50  # ดึงมากสุดต่อวัน
+    max_results: 50
 
   huggingface:
     daily_papers: true
@@ -21,12 +21,12 @@ interests:
   - Fine-tuning & PEFT
   - Multimodal models
 
-# Relevance threshold (0-1) — ต่ำกว่านี้ไม่ส่ง
+# Relevance threshold (0-1)
 min_score: 0.5
 
-# LLM สำหรับสรุป
+# LLM for summarization
 llm:
-  provider: openai       # ใช้ openai-compatible API
+  provider: openai
   model: GEMMA-4
   base_url: https://gateway-llm.siam.ai
 
@@ -35,13 +35,13 @@ digest:
   format: markdown
   output_dir: digest/
 
-# Delivery (เลือกอย่างใดอย่างหนึ่ง)
+# Delivery
 delivery:
   # slack:
   #   webhook: https://hooks.slack.com/...
   # discord:
   #   webhook: https://discord.com/api/webhooks/...
-  file: true  # บันทึกลงไฟล์ใน digest/
+  file: true
 
-# SQLite สำหรับเก็บประวัติ (ไม่ส่งซ้ำ)
-database: paper_lead.db
+# SQLite for history (dedup)
+database: data/paper_lead.sqlite3

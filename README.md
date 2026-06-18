@@ -1,34 +1,34 @@
-# 📰 Paper Lead — AI Research Digest Agent
+# Paper Lead - AI Research Digest Agent
 
-Agent ที่อ่าน paper AI ล่าสุดให้ทุกวัน → สรุป → ส่ง digest ให้ทีม เหมือนมี R&D Lead คนนึง
+Agent that fetches the latest AI papers daily, summarizes them, and delivers a digest to the team - like having an R&D Lead who reads everything for you.
 
-## ทำไมต้องมี
+## Why
 
-- AI เปลี่ยนเร็ว — paper ใหม่ออกวันละ 100+ ฉบับ ไม่มีใครอ่านทัน
-- ทีมตามไม่ทัน → พลาด breakthrough
-- Paper Lead = ตื่นมาเห็นสรุป 5 นาที รู้ว่าวงการไปถึงไหนแล้ว
+- AI moves fast - 100+ new papers per day, nobody can keep up
+- Teams miss breakthroughs without a dedicated reader
+- Paper Lead = wake up to a 5-minute summary, know where the field is at
 
 ## Architecture
 
 ```
-arXiv API ──┐
-             ├──▶ Fetcher ──▶ Ranker ──▶ Summarizer ──▶ Publisher ──▶ Digest
-HF Daily ───┘     (คน A)      (คน A)      (คน B)        (คน B)
+arXiv API --\
+             +--> Fetcher --> Ranker --> Summarizer --> Publisher --> Digest
+HF Daily ---/     (Track A)   (Track A)    (Track B)     (Track B)
 ```
 
-## แบ่งงาน 2 คน
+## 2-Person Task Split
 
-| 🅰️ คน A — Paper Fetcher & Ranker | 🅱️ คน B — Summarizer & Publisher |
+| Track A - Paper Fetcher & Ranker | Track B - Summarizer & Publisher |
 |---|---|
-| ดึง paper จาก arXiv API + HuggingFace Daily Papers | สรุป paper ด้วย LLM |
-| กรอง + ให้ relevance score ตาม interest profile | จัดหมวดหมู่: Must Read / Worth Reading / Tools |
-| เก็บ metadata ลง SQLite (ไม่ส่งซ้ำ) | สร้าง digest markdown |
+| Fetch papers from arXiv API + HuggingFace Daily Papers | Summarize papers via LLM |
+| Filter + score by relevance against interest profile | Categorize: Must Read / Worth Reading / Tools |
+| Store metadata in SQLite (dedup) | Generate digest markdown |
 | `src/fetcher.py`, `src/ranker.py` | `src/summarizer.py`, `src/publisher.py` |
 
-## Interface (JSON schema ที่ตกลงกัน)
+## Interface (JSON schema agreed by both tracks)
 
 ```json
-// A ส่งให้ B:
+// Track A sends to Track B:
 {
   "date": "2026-06-18",
   "papers": [
@@ -44,9 +44,9 @@ HF Daily ───┘     (คน A)      (คน A)      (คน B)        (ค
   ]
 }
 
-// B ตอบ — digest markdown:
+// Track B outputs digest markdown:
 {
-  "digest": "# 📰 Paper Lead — 18 Jun 2026\n...",
+  "digest": "# Paper Lead - 2026-06-18\n...",
   "stats": {
     "total_fetched": 87,
     "total_filtered": 12,
@@ -61,17 +61,18 @@ HF Daily ───┘     (คน A)      (คน A)      (คน B)        (ค
 
 ```bash
 pip install -r requirements.txt
-cp config.example.yaml config.yaml  # แก้ topics ที่สนใจ
-python src/main.py
+cp .env.example .env  # add your API keys
+cp config.example.yaml config.yaml  # customize interests
+python src/main.py --dry-run
 ```
 
 ## Config
 
-ดู `config.example.yaml`
+See `config.example.yaml`
 
 ## Output
 
-Digest ออกมาเป็น markdown ใน `digest/YYYY-MM-DD.md`
+Digest saved as markdown in `digest/YYYY-MM-DD.md`
 
 ## License
 

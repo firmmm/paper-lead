@@ -1,6 +1,6 @@
-"""Paper Lead — Summarizer (Track B)
+"""Paper Lead - Summarizer (Track B)
 
-รับ list of papers → สรุปด้วย LLM → จัดหมวดหมู่ → สร้าง digest markdown
+Receives a list of papers, summarizes them via LLM, categorizes, and produces a digest markdown.
 """
 
 import json
@@ -15,7 +15,7 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-# โหลด .env
+# Load .env
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 
@@ -38,14 +38,14 @@ class DigestResult:
 
 
 def load_prompt_template(path: str = None) -> str:
-    """โหลด prompt template จาก prompts/summarize.md"""
+    """Load prompt template from prompts/summarize.md"""
     if path is None:
         path = Path(__file__).parent.parent / "prompts" / "summarize.md"
     return Path(path).read_text()
 
 
 def init_llm_client(config: dict) -> OpenAI:
-    """สร้าง OpenAI client จาก config — fail ถ้าไม่มี API key"""
+    """Create OpenAI client from config. Raises ValueError if no API key found."""
     api_key = os.environ.get("SIAM_AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("Missing API key: set SIAM_AI_API_KEY or OPENAI_API_KEY in .env")
@@ -56,11 +56,11 @@ def init_llm_client(config: dict) -> OpenAI:
 
 
 def categorize_papers(papers: list[RankedPaper]) -> dict:
-    """จัดหมวดหมู่ papers ตาม score — paper อยู่ได้หลายหมวด"""
+    """Categorize papers by score. A paper can belong to multiple categories."""
     categories = {
-        "must_read": [],    # score > 0.8
+        "must_read": [],      # score > 0.8
         "worth_reading": [],  # 0.5-0.8
-        "tools": [],        # topics มี tool/framework/benchmark
+        "tools": [],          # topics contain tool/framework/benchmark
     }
 
     for p in papers:
@@ -83,12 +83,12 @@ def summarize_batch(
     prompt_template: str = None,
 ) -> DigestResult:
     """
-    สรุป batch ของ papers ด้วย LLM
+    Summarize a batch of papers via LLM.
 
     Args:
-        papers: list of paper dicts (จาก Track A interface)
+        papers: list of paper dicts (from Track A interface)
         llm_config: {provider, model, base_url?}
-        prompt_template: custom prompt (ถ้าไม่ใส่จะใช้ default)
+        prompt_template: custom prompt (defaults to prompts/summarize.md)
 
     Returns:
         DigestResult with markdown digest + stats
@@ -117,7 +117,7 @@ def summarize_batch(
     # Categorize
     categories = categorize_papers(ranked_papers)
 
-    # Build paper summary for LLM — ใส่ ... เฉพาะตอนตัดจริง
+    # Build paper summary for LLM - only append "..." when actually truncated
     papers_text = ""
     for i, p in enumerate(ranked_papers, 1):
         abstract_text = p.abstract[:500]
@@ -151,7 +151,7 @@ def summarize_batch(
     except Exception as e:
         logger.error(f"LLM summarization failed: {e}")
 
-    # Fallback: สร้าง digest แบบ manual ถ้า LLM ไม่ได้
+    # Fallback: manual digest if LLM fails
     if digest_content is None:
         logger.info("Using manual digest fallback")
         digest_content = _manual_digest(categories, today)
@@ -168,23 +168,23 @@ def summarize_batch(
 
 
 def _manual_digest(categories: dict, today: str) -> str:
-    """Fallback: สร้าง digest แบบไม่ใช้ LLM"""
-    lines = [f"# 📰 Paper Lead — {today}", ""]
+    """Fallback: generate digest without LLM"""
+    lines = [f"# Paper Lead - {today}", ""]
 
     if categories["must_read"]:
-        lines.append("🔥 **Must Read**")
+        lines.append("## Must Read")
         for p in categories["must_read"]:
             lines.append(f"- [{p.title}]({p.url})")
         lines.append("")
 
     if categories["worth_reading"]:
-        lines.append("📋 **Worth Reading**")
+        lines.append("## Worth Reading")
         for p in categories["worth_reading"]:
             lines.append(f"- [{p.title}]({p.url})")
         lines.append("")
 
     if categories["tools"]:
-        lines.append("💡 **Tools & Frameworks**")
+        lines.append("## Tools & Frameworks")
         for p in categories["tools"]:
             lines.append(f"- [{p.title}]({p.url})")
         lines.append("")
@@ -198,12 +198,12 @@ if __name__ == "__main__":
 
     import yaml
 
-    # รับ papers จาก stdin หรือไฟล์
+    # Read papers from file or use sample data
     if len(sys.argv) > 1:
         with open(sys.argv[1]) as f:
             papers = json.load(f).get("papers", [])
     else:
-        # Sample data สำหรับ test
+        # Sample data for testing
         papers = [
             {
                 "id": "2306.12345",
@@ -243,7 +243,7 @@ if __name__ == "__main__":
             },
         ]
 
-    # โหลด config
+    # Load config
     config_path = Path(__file__).parent.parent / "config.example.yaml"
     with open(config_path) as f:
         config = yaml.safe_load(f)
@@ -251,4 +251,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     result = summarize_batch(papers, config.get("llm", {}))
     print(result.digest)
-    print(f"\n📊 Stats: {json.dumps(result.stats, indent=2)}")
+    print(f"\nStats: {json.dumps(result.stats, indent=2)}")

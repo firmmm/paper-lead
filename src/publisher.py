@@ -1,6 +1,6 @@
-"""Paper Lead — Publisher (Track B)
+"""Paper Lead - Publisher (Track B)
 
-รับ DigestResult → บันทึกลงไฟล์ / ส่ง webhook
+Receives DigestResult and saves to file / sends to webhook.
 """
 
 import json
@@ -15,10 +15,10 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-# โหลด .env
+# Load .env
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-# Allowed webhook domains
+# Allowed webhook domains (SSRF protection)
 ALLOWED_WEBHOOK_DOMAINS = {
     "discord.com",
     "discordapp.com",
@@ -28,7 +28,7 @@ ALLOWED_WEBHOOK_DOMAINS = {
 
 
 def _validate_webhook_url(url: str) -> bool:
-    """ตรวจ webhook URL ว่าเป็น domain ที่อนุญาต (ป้องกัน SSRF)"""
+    """Validate webhook URL against allowed domains (SSRF protection)."""
     try:
         parsed = urlparse(url)
         return parsed.scheme in ("https",) and parsed.hostname in ALLOWED_WEBHOOK_DOMAINS
@@ -42,7 +42,7 @@ def publish_digest(
     config: dict,
 ) -> dict:
     """
-    Publish digest ตาม config
+    Publish digest according to config.
 
     Args:
         digest_content: markdown string
@@ -85,7 +85,7 @@ def publish_digest(
 
 
 def _save_to_file(content: str, stats: dict, output_dir: str) -> Path:
-    """บันทึก digest เป็น markdown file"""
+    """Save digest as markdown file"""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -93,18 +93,17 @@ def _save_to_file(content: str, stats: dict, output_dir: str) -> Path:
     filepath = out / f"{today}.md"
 
     # Add stats footer
-    footer = f"\n\n---\n📊 Stats: {stats.get('total_fetched', 0)} scanned, {stats.get('total_filtered', 0)} relevant, {stats.get('must_read', 0)} must read"
+    footer = f"\n\n---\nStats: {stats.get('total_fetched', 0)} scanned, {stats.get('total_filtered', 0)} relevant, {stats.get('must_read', 0)} must read"
 
     filepath.write_text(content + footer, encoding="utf-8")
     return filepath
 
 
 def _send_slack(webhook_url: str, content: str, stats: dict) -> bool:
-    """ส่ง digest ไป Slack webhook"""
+    """Send digest to Slack webhook"""
     try:
-        # Slack supports markdown in blocks
         payload = {
-            "text": "📰 Paper Lead — Daily AI Research Digest",
+            "text": "Paper Lead - Daily AI Research Digest",
             "blocks": [
                 {
                     "type": "section",
@@ -118,7 +117,7 @@ def _send_slack(webhook_url: str, content: str, stats: dict) -> bool:
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": f"📊 {stats.get('total_fetched', 0)} scanned | {stats.get('must_read', 0)} must read",
+                            "text": f"Stats: {stats.get('total_fetched', 0)} scanned | {stats.get('must_read', 0)} must read",
                         }
                     ],
                 },
@@ -134,10 +133,10 @@ def _send_slack(webhook_url: str, content: str, stats: dict) -> bool:
 
 
 def _send_discord(webhook_url: str, content: str, stats: dict) -> bool:
-    """ส่ง digest ไป Discord webhook"""
+    """Send digest to Discord webhook"""
     try:
-        prefix = "📰 **Paper Lead — Daily AI Research Digest**\n"
-        # Discord 2000 char limit — คิด prefix length ด้วย
+        prefix = "**Paper Lead - Daily AI Research Digest**\n"
+        # Discord 2000 char limit - account for prefix length
         max_content = 2000 - len(prefix)
         truncated = content[:max_content]
         if len(content) > max_content:
@@ -159,13 +158,13 @@ if __name__ == "__main__":
 
     import yaml
 
-    # รับ digest จากไฟล์หรือ stdin
+    # Read digest from file or use sample
     if len(sys.argv) > 1:
         digest_content = Path(sys.argv[1]).read_text()
     else:
-        digest_content = "# 📰 Paper Lead — 2026-06-18\n\n🔥 **Must Read**\n- Test paper\n"
+        digest_content = "# Paper Lead - 2026-06-18\n\n## Must Read\n- Test paper\n"
 
-    # โหลด config
+    # Load config
     config_path = Path(__file__).parent.parent / "config.example.yaml"
     with open(config_path) as f:
         config = yaml.safe_load(f)
