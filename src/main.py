@@ -15,8 +15,8 @@ import yaml
 from src import db, fetcher, ranker
 from src.fetcher import Paper
 from src.ranker import RankedPaper
-from summarizer import summarize_batch
-from publisher import publish_digest
+from src.summarizer import summarize_batch
+from src.publisher import publish_digest
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class Config:
     max_results: int = 100
     date_from: str = ""
     hf_date: str = ""
-    min_score: float = 0.3
+    min_score: float = 0.1
     db_path: str = "data/paper_lead.sqlite3"
     llm: dict = field(default_factory=lambda: {
         "provider": "openai",
@@ -155,11 +155,13 @@ def main():
     result = summarize_batch(papers_dicts, config.llm)
 
     # Step 3: Publish (Track B)
+    publish_success = False
     if args.dry_run:
         print("\n" + "=" * 60)
         print(result.digest)
         print("=" * 60)
         print(f"Stats: {json.dumps(result.stats, indent=2)}")
+        publish_success = True  # dry-run counts as success
     else:
         pub_config = {
             "delivery": config.delivery,
@@ -167,16 +169,23 @@ def main():
         }
         results = publish_digest(result.digest, result.stats, pub_config)
         logger.info(f"Published to: {json.dumps(results, indent=2)}")
+        # Consider publish successful if at least one delivery worked
+        publish_success = any(v == "sent" or (isinstance(v, str) and v.endswith(".md")) for v in results.values())
 
-    # Step 4: Mark seen in DB
-    for paper in ranked_papers:
-        db.mark_seen(
-            paper_or_id=paper.id,
-            score=paper.score,
-            title=paper.title,
-            digest_date=date.today().isoformat(),
-            db_path=config.db_path,
-        )
+    # Step 4: Mark seen in DB ONLY if publish succeeded
+    # This prevents papers from being lost if publishing fails
+    if publish_success:
+        for paper in ranked_papers:
+            db.mark_seen(
+                paper_or_id=paper.id,
+                score=paper.score,
+                title=paper.title,
+                digest_date=date.today().isoformat(),
+                db_path=config.db_path,
+            )
+        logger.info(f"Marked {len(ranked_papers)} papers as seen")
+    else:
+        logger.warning("Publish failed - papers NOT marked as seen, will retry next run")
 
 
 if __name__ == "__main__":

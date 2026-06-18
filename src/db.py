@@ -119,20 +119,47 @@ def filter_seen(
     papers: Sequence[Paper],
     db_path: str | os.PathLike | None = None,
 ) -> list[Paper]:
+    """Filter out already-seen papers using a single batch query."""
     init_db(db_path)
-    unseen: list[Paper] = []
+    if not papers:
+        return []
+
+    ids = [p.id for p in papers]
     with _connect(db_path) as conn:
-        for paper in papers:
-            row = conn.execute("SELECT 1 FROM papers WHERE id = ? LIMIT 1", (paper.id,)).fetchone()
-            if row is None:
-                unseen.append(paper)
-    return unseen
+        # Batch query with IN clause
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT id FROM papers WHERE id IN ({placeholders})",
+            ids,
+        ).fetchall()
+        seen_ids = {row["id"] for row in rows}
+
+    return [p for p in papers if p.id not in seen_ids]
 
 
 def mark_seen_many(
-    papers: Sequence[Paper],
+    papers: Sequence,
     db_path: str | os.PathLike | None = None,
 ) -> None:
+    """Mark multiple papers as seen in a single transaction."""
     init_db(db_path)
-    for paper in papers:
-        mark_seen(paper, score=getattr(paper, "score", 0.0), db_path=db_path)
+    with _connect(db_path) as conn:
+        for paper in papers:
+            paper_id = getattr(paper, "id", str(paper))
+            title = getattr(paper, "title", "")
+            score = float(getattr(paper, "score", 0.0))
+            fetched_date_str = _today_iso()
+            digest_date_str = _today_iso()
+
+            conn.execute(
+                """
+                INSERT INTO papers (id, title, fetched_date, score, digest_date)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    fetched_date = excluded.fetched_date,
+                    score = excluded.score,
+                    digest_date = COALESCE(excluded.digest_date, papers.digest_date)
+                """,
+                (paper_id, title or "", fetched_date_str, score, digest_date_str),
+            )

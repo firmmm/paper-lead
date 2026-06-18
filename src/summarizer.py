@@ -13,22 +13,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Import shared type from Track A
+from src.ranker import RankedPaper
+
 logger = logging.getLogger(__name__)
 
 # Load .env
 load_dotenv(Path(__file__).parent.parent / ".env")
-
-
-@dataclass
-class RankedPaper:
-    id: str
-    title: str
-    abstract: str
-    authors: list[str] = field(default_factory=list)
-    url: str = ""
-    score: float = 0.0
-    topics: list[str] = field(default_factory=list)
-    published_date: str = ""
 
 
 @dataclass
@@ -86,7 +77,7 @@ def summarize_batch(
     Summarize a batch of papers via LLM.
 
     Args:
-        papers: list of paper dicts (from Track A interface)
+        papers: list of paper dicts (from Track A interface via to_dict())
         llm_config: {provider, model, base_url?}
         prompt_template: custom prompt (defaults to prompts/summarize.md)
 
@@ -96,14 +87,13 @@ def summarize_batch(
     if prompt_template is None:
         prompt_template = load_prompt_template()
 
-    # Convert to RankedPaper
-    ranked_papers = []
+    # Convert dicts to RankedPaper using the shared type
+    ranked_papers: list[RankedPaper] = []
     for p in papers:
-        abstract = p.get("abstract") or ""
         ranked_papers.append(RankedPaper(
             id=p.get("id", ""),
             title=p.get("title", ""),
-            abstract=abstract,
+            abstract=p.get("abstract") or "",
             authors=p.get("authors", []),
             url=p.get("url", ""),
             score=p.get("score", 0.0),
@@ -145,7 +135,10 @@ def summarize_batch(
             temperature=0.3,
             max_tokens=2000,
         )
-        digest_content = response.choices[0].message.content
+        choice = response.choices[0]
+        if choice.finish_reason == "length":
+            logger.warning("LLM response was truncated (finish_reason=length). Digest may be incomplete.")
+        digest_content = choice.message.content
     except ValueError as e:
         logger.error(f"LLM client init failed: {e}")
     except Exception as e:

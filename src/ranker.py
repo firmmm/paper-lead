@@ -46,7 +46,25 @@ def _normalize_interests(interests) -> list[tuple[str, list[str]]]:
     return groups
 
 
+# Aliases for multi-word keywords that regex word-boundary matching may miss
+_KEYWORD_ALIASES: dict[str, list[str]] = {
+    "tool use": ["tool use", "tool-use", "tool calling", "function calling"],
+    "mixture of experts": ["mixture of experts", "moe", "mixtral"],
+    "vision language": ["vision language", "vlm", "vision-language", "multimodal llm"],
+    "large language model": ["large language model", "llm", "large language models"],
+}
+
+
+def _expand_keyword(keyword: str) -> list[str]:
+    """Expand a keyword with its aliases if available."""
+    kw = keyword.strip().lower()
+    return _KEYWORD_ALIASES.get(kw, [keyword])
+
+
 def _keyword_hit_score(title: str, abstract: str, keyword: str) -> float:
+    """Score a keyword match against title and abstract.
+    Uses simple substring matching to avoid word-boundary issues with multi-word keywords.
+    """
     kw = keyword.strip().lower()
     if not kw:
         return 0.0
@@ -54,14 +72,6 @@ def _keyword_hit_score(title: str, abstract: str, keyword: str) -> float:
     title_l = title.lower()
     abstract_l = abstract.lower()
 
-    pattern = re.escape(kw)
-    title_hit = re.search(rf"\b{pattern}\b", title_l) is not None
-    abstract_hit = re.search(rf"\b{pattern}\b", abstract_l) is not None
-
-    if title_hit:
-        return 1.0
-    if abstract_hit:
-        return 0.6
     if kw in title_l:
         return 1.0
     if kw in abstract_l:
@@ -90,7 +100,9 @@ def rank_papers(
         for topic, keywords in groups:
             best = 0.0
             for kw in keywords:
-                best = max(best, _keyword_hit_score(text_title, text_abstract, kw))
+                # Expand keyword with aliases
+                for expanded_kw in _expand_keyword(kw):
+                    best = max(best, _keyword_hit_score(text_title, text_abstract, expanded_kw))
             group_scores.append(best)
             if best > 0:
                 topic_hits.append(topic)

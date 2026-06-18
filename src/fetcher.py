@@ -84,7 +84,8 @@ def _fetch_hf_paper_detail(
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
-    title = _clean_text(soup.find("h1").get_text(" ", strip=True) if soup.find("h1") else title_fallback)
+    h1 = soup.find("h1")
+    title = _clean_text(h1.get_text(" ", strip=True) if h1 else title_fallback)
 
     full_text = soup.get_text("\n", strip=True)
     lines = [ln.strip() for ln in full_text.splitlines() if ln.strip()]

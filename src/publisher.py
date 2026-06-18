@@ -71,7 +71,7 @@ def publish_digest(
             ok = _send_slack(slack_webhook, digest_content, stats)
             results["slack"] = "sent" if ok else "failed"
 
-    # 3. Send to Discord
+    # 3. Send to Discord (split into multiple messages if needed)
     discord_webhook = delivery.get("discord", {}).get("webhook") or os.environ.get("DISCORD_WEBHOOK")
     if discord_webhook:
         if not _validate_webhook_url(discord_webhook):
@@ -133,23 +133,45 @@ def _send_slack(webhook_url: str, content: str, stats: dict) -> bool:
 
 
 def _send_discord(webhook_url: str, content: str, stats: dict) -> bool:
-    """Send digest to Discord webhook"""
-    try:
-        prefix = "**Paper Lead - Daily AI Research Digest**\n"
-        # Discord 2000 char limit - account for prefix length
-        max_content = 2000 - len(prefix)
-        truncated = content[:max_content]
-        if len(content) > max_content:
-            truncated = truncated.rstrip() + "\n...(truncated)"
+    """Send digest to Discord webhook, splitting into multiple messages if needed."""
+    prefix = "**Paper Lead - Daily AI Research Digest**\n"
+    max_per_msg = 2000
 
-        payload = {"content": prefix + truncated}
-        resp = requests.post(webhook_url, json=payload, timeout=10)
-        if resp.status_code != 204:
-            logger.error(f"Discord webhook failed: status={resp.status_code}, body={resp.text[:200]}")
-        return resp.status_code == 204
-    except requests.RequestException as e:
-        logger.error(f"Discord webhook error: {e}")
-        return False
+    # Split content into chunks that fit Discord's limit
+    chunks: list[str] = []
+    remaining = content
+    first = True
+
+    while remaining:
+        available = max_per_msg - (len(prefix) if first else 0)
+        if len(remaining) <= available:
+            chunks.append(remaining)
+            break
+        # Split at newline to avoid cutting mid-line
+        split_at = remaining.rfind("\n", 0, available)
+        if split_at == -1:
+            split_at = available
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:].lstrip("\n")
+        first = False
+
+    all_ok = True
+    for i, chunk in enumerate(chunks):
+        if i == 0:
+            payload = {"content": prefix + chunk}
+        else:
+            payload = {"content": f"**(continued {i+1}/{len(chunks)})**\n" + chunk}
+
+        try:
+            resp = requests.post(webhook_url, json=payload, timeout=10)
+            if resp.status_code != 204:
+                logger.error(f"Discord webhook failed (msg {i+1}/{len(chunks)}): status={resp.status_code}, body={resp.text[:200]}")
+                all_ok = False
+        except requests.RequestException as e:
+            logger.error(f"Discord webhook error (msg {i+1}/{len(chunks)}): {e}")
+            all_ok = False
+
+    return all_ok
 
 
 # --- CLI for testing ---
