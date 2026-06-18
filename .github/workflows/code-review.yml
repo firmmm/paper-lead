@@ -1,0 +1,98 @@
+name: 🤖 KIMI-2.7 Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Get changed files
+        id: changed
+        run: |
+          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only | grep '\.py$' | tr '\n' ' ')
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare review
+        if: steps.changed.outputs.files != ''
+        id: prepare
+        run: |
+          # Get the full diff
+          DIFF=$(gh pr diff ${{ github.event.pull_request.number }})
+          echo "diff<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIFF" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Get changed file contents
+          CONTENTS=""
+          for f in ${{ steps.changed.outputs.files }}; do
+            if [ -f "$f" ]; then
+              CONTENTS+="--- $f ---\n\`\`\`python\n$(cat $f)\n\`\`\`\n\n"
+            fi
+          done
+          echo "contents<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$CONTENTS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: KIMI-2.7 Review
+        if: steps.changed.outputs.files != ''
+        id: review
+        run: |
+          PROMPT="You are a senior code reviewer. Review this PR for:
+
+1. 🐛 Bugs or logic errors
+2. 🔒 Security issues
+3. 🎨 Code style and best practices
+4. ⚠️ Error handling
+5. 💡 Suggestions for improvement
+
+Changed files: ${{ steps.changed.outputs.files }}
+
+Diff:
+${{ steps.prepare.outputs.diff }}
+
+Full file contents:
+${{ steps.prepare.outputs.contents }}
+
+Write a structured review in markdown. Be concise but thorough. Use Thai for explanations, English for code."
+
+          RESPONSE=$(curl -s -X POST "${{ secrets.SIAM_AI_BASE_URL }}/v1/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.SIAM_AI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg prompt "$PROMPT" \
+              '{
+                model: "KIMI-2.7",
+                messages: [{role: "user", content: $prompt}],
+                temperature: 0.3,
+                max_tokens: 3000
+              }')")
+
+          REVIEW=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "❌ Review failed — LLM did not return content"')
+          echo "review<<EOF" >> $GITHUB_OUTPUT
+          echo "$REVIEW" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post review comment
+        if: steps.changed.outputs.files != ''
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "## 🤖 KIMI-2.7 Code Review
+
+${{ steps.review.outputs.review }}
+
+---
+*Auto-reviewed by KIMI-2.7 via Siam AI Gateway*"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
