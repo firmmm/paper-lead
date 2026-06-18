@@ -1,0 +1,69 @@
+# Paper Lead - Interest Keywords
+# Each topic has a list of keywords to match against paper titles and abstracts.
+# A paper can match multiple topics.
+# Add/remove keywords or topics freely.
+
+agents:
+  - agent
+  - tool use
+  - tool-use
+  - planning
+  - workflow
+  - function calling
+  - autonomous
+
+rag:
+  - rag
+  - retrieval
+  - reranking
+  - vector database
+  - embedding
+
+multimodal:
+  - multimodal
+  - vision language
+  - vlm
+  - image generation
+  - audio
+  - video generation
+
+efficiency:
+  - quantization
+  - distillation
+  - pruning
+  - efficiency
+  - compression
+  - on-device
+
+architecture:
+  - transformer
+  - attention
+  - mixture of experts
+  - moe
+  - ssm
+  - mamba
+  - state space model
+
+training:
+  - fine-tuning
+  - pretraining
+  - alignment
+  - rlhf
+  - dpo
+  - lora
+  - rl training
+
+inference:
+  - inference
+  - serving
+  - latency
+  - throughput
+  - kv cache
+  - speculative decoding
+
+safety:
+  - safety
+  - red teaming
+  - jailbreak
+  - guardrails
+  - hallucination

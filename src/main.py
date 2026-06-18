@@ -36,17 +36,8 @@ class Config:
     })
     delivery: dict = field(default_factory=dict)
     digest: dict = field(default_factory=dict)
-    interests: dict = field(
-        default_factory=lambda: {
-            "agents": ["agent", "tool use", "planning", "workflow", "function calling"],
-            "rag": ["rag", "retrieval", "reranking", "vector database"],
-            "multimodal": ["multimodal", "vision language", "image", "audio"],
-            "efficiency": ["quantization", "distillation", "pruning", "efficiency", "compression"],
-            "architecture": ["transformer", "attention", "mixture of experts", "moe"],
-            "training": ["fine-tuning", "pretraining", "alignment", "rlhf", "dpo"],
-            "inference": ["inference", "serving", "latency", "throughput", "kv cache"],
-        }
-    )
+    interests_file: str = "interests.yaml"
+    interests: dict = field(default_factory=dict)
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -71,7 +62,33 @@ def load_config(path: str | None = None) -> Config:
     for key, value in raw.items():
         if hasattr(cfg, key):
             setattr(cfg, key, value)
+
+    # Load interests from separate file if interests dict is empty
+    if not cfg.interests:
+        cfg.interests = load_interests(cfg.interests_file)
+
     return cfg
+
+
+def load_interests(path: str = "interests.yaml") -> dict:
+    """Load interest keywords from a separate YAML file.
+    Falls back to built-in defaults if file not found.
+    """
+    p = Path(path)
+    if p.exists():
+        with open(p, "r", encoding="utf-8") as f:
+            interests = yaml.safe_load(f)
+            if isinstance(interests, dict):
+                logger.info(f"Loaded interests from {p}")
+                return interests
+
+    # Built-in fallback
+    logger.warning(f"Interests file {p} not found, using built-in defaults")
+    return {
+        "agents": ["agent", "tool use", "planning", "workflow", "function calling"],
+        "architecture": ["transformer", "attention", "moe", "mamba"],
+        "efficiency": ["quantization", "distillation", "pruning"],
+    }
 
 
 def fetch_all_papers(config: Config) -> list[Paper]:
