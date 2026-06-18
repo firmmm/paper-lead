@@ -19,8 +19,8 @@ F เอา Track B — สรุป paper + publish digest
 # ติดตั้ง dependencies
 pip install -r requirements.txt
 
-# รับ OPENAI_API_KEY
-export OPENAI_API_KEY=sk-xxx
+# ตั้ง API key
+export SIAM_AI_API_KEY=sk-xxx  # หรือ OPENAI_API_KEY ถ้าใช้ provider อื่น
 
 # Dry run (ไม่บันทึกไฟล์)
 cd src

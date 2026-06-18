@@ -41,7 +41,8 @@ def load_prompt_template(path: str = None) -> str:
 
 def init_llm_client(config: dict) -> OpenAI:
     """สร้าง OpenAI client จาก config"""
-    kwargs = {"api_key": os.environ.get("OPENAI_API_KEY", "sk-placeholder")}
+    api_key = os.environ.get("SIAM_AI_API_KEY", os.environ.get("OPENAI_API_KEY", "sk-placeholder"))
+    kwargs = {"api_key": api_key}
     if base_url := config.get("base_url"):
         kwargs["base_url"] = base_url
     return OpenAI(**kwargs)
