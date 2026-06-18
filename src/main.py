@@ -5,119 +5,158 @@
 
 import argparse
 import json
+import logging
 import sys
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 import yaml
 
-# Track B imports
+from src import db, fetcher, ranker
+from src.fetcher import Paper
+from src.ranker import RankedPaper
 from summarizer import summarize_batch
 from publisher import publish_digest
 
-
-def load_config(config_path: str = None) -> dict:
-    if config_path is None:
-        config_path = Path(__file__).parent.parent / "config.yaml"
-        if not config_path.exists():
-            config_path = Path(__file__).parent.parent / "config.example.yaml"
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+logger = logging.getLogger(__name__)
 
 
-def fetch_papers(config: dict, date_from: str = None) -> list:
-    """ดึง papers จาก Track A — ถ้ายังไม่เสร็จจะใช้ sample data"""
-    try:
-        from fetcher import fetch_arxiv, fetch_huggingface_daily
-        from ranker import rank_papers
-        from db import filter_seen
+@dataclass
+class Config:
+    categories: list[str] = field(default_factory=lambda: ["cs.AI", "cs.LG", "cs.CL"])
+    max_results: int = 100
+    date_from: str = ""
+    hf_date: str = ""
+    min_score: float = 0.3
+    db_path: str = "data/paper_lead.sqlite3"
 
-        all_papers = []
-        if config.get("sources", {}).get("arxiv"):
-            arxiv_cfg = config["sources"]["arxiv"]
-            all_papers.extend(fetch_arxiv(
-                categories=arxiv_cfg.get("categories", ["cs.AI", "cs.CL", "cs.LG"]),
-                max_results=arxiv_cfg.get("max_results", 50),
-                date_from=date_from,
-            ))
+    # LLM config (Track B)
+    llm: dict = field(default_factory=dict)
 
-        if config.get("sources", {}).get("huggingface", {}).get("daily_papers"):
-            all_papers.extend(fetch_huggingface_daily(date=date_from or date.today().isoformat()))
+    # Delivery config (Track B)
+    delivery: dict = field(default_factory=dict)
+    digest: dict = field(default_factory=dict)
 
-        new_papers = filter_seen(all_papers)
-        ranked = rank_papers(new_papers, config.get("interests", []), config.get("min_score", 0.5))
-        return [p.__dict__ if hasattr(p, "__dict__") else p for p in ranked]
+    # Interests
+    interests: dict = field(
+        default_factory=lambda: {
+            "agents": ["agent", "tool use", "planning", "workflow", "function calling"],
+            "rag": ["rag", "retrieval", "reranking", "vector database"],
+            "multimodal": ["multimodal", "vision language", "image", "audio"],
+            "efficiency": ["quantization", "distillation", "pruning", "efficiency", "compression"],
+            "architecture": ["transformer", "attention", "mixture of experts", "moe"],
+            "training": ["fine-tuning", "pretraining", "alignment", "rlhf", "dpo"],
+            "inference": ["inference", "serving", "latency", "throughput", "kv cache"],
+        }
+    )
 
-    except ImportError:
-        print("⚠️  Track A not available, using sample data")
-        return _sample_papers()
+
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    return date.fromisoformat(value)
 
 
-def _sample_papers() -> list:
-    return [
-        {
-            "id": "2306.12345",
-            "title": "Mamba-3: Linear Attention at Scale",
-            "abstract": "We present Mamba-3, a new architecture that achieves 3x speedup over Transformers on long sequences while maintaining quality.",
-            "url": "https://arxiv.org/abs/2306.12345",
-            "score": 0.92,
-            "topics": ["architecture", "efficiency"],
-            "published_date": "2026-06-17",
-        },
-        {
-            "id": "2306.67890",
-            "title": "Thai-LLaMA 7B: Fine-tuned for Thai NLU",
-            "abstract": "We fine-tune LLaMA 7B on Thai corpora, achieving state-of-the-art results on Thai NLU benchmarks, surpassing GPT-4o-mini.",
-            "url": "https://arxiv.org/abs/2306.67890",
-            "score": 0.88,
-            "topics": ["nlp", "thai"],
-            "published_date": "2026-06-17",
-        },
-        {
-            "id": "2306.11111",
-            "title": "Efficient LoRA Merging for Multi-Task Learning",
-            "abstract": "We propose a method to merge multiple LoRA adapters without catastrophic forgetting.",
-            "url": "https://arxiv.org/abs/2306.11111",
-            "score": 0.65,
-            "topics": ["fine-tuning", "peft"],
-            "published_date": "2026-06-16",
-        },
-        {
-            "id": "2306.22222",
-            "title": "vLLM 0.8: PagedAttention v2",
-            "abstract": "vLLM 0.8 introduces PagedAttention v2 with 2x throughput improvement.",
-            "url": "https://arxiv.org/abs/2306.22222",
-            "score": 0.55,
-            "topics": ["tool", "framework", "inference"],
-            "published_date": "2026-06-16",
-        },
-    ]
+def load_config(path: str | None = None) -> Config:
+    """โหลด config จาก YAML or JSON"""
+    cfg = Config()
+    if not path:
+        return cfg
+
+    p = Path(path)
+    with open(p, "r", encoding="utf-8") as f:
+        if p.suffix == ".json":
+            raw = json.load(f)
+        else:
+            raw = yaml.safe_load(f)
+
+    for key, value in raw.items():
+        if hasattr(cfg, key):
+            setattr(cfg, key, value)
+    return cfg
+
+
+def fetch_all_papers(config: Config) -> list[Paper]:
+    """ดึง papers จาก arXiv + HuggingFace"""
+    date_from = _parse_date(config.date_from) or (date.today() - timedelta(days=1))
+    hf_date = _parse_date(config.hf_date) or date.today()
+
+    arxiv_papers = fetcher.fetch_arxiv(
+        categories=config.categories,
+        max_results=config.max_results,
+        date_from=date_from,
+    )
+    hf_papers = fetcher.fetch_huggingface_daily(hf_date)
+
+    # Merge — deduplicate by paper id
+    merged: dict[str, Paper] = {p.id: p for p in arxiv_papers}
+    for p in hf_papers:
+        merged.setdefault(p.id, p)
+    return list(merged.values())
 
 
 def main():
     parser = argparse.ArgumentParser(description="📰 Paper Lead — AI Research Digest Agent")
-    parser.add_argument("--config", default=None, help="Path to config.yaml")
+    parser.add_argument("--config", default=None, help="Path to config.yaml or config.json")
     parser.add_argument("--date", default=None, help="Date to fetch (YYYY-MM-DD), default: yesterday")
     parser.add_argument("--dry-run", action="store_true", help="Print digest without saving")
+    parser.add_argument("--output", default=None, help="Save ranked papers as JSON")
+    parser.add_argument("--log-level", default="INFO", help="DEBUG, INFO, WARNING, ERROR")
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
 
     config = load_config(args.config)
 
-    # Default: yesterday's papers
-    date_from = args.date or (date.today() - timedelta(days=1)).isoformat()
-    print(f"📰 Fetching papers from {date_from}...")
+    # Override date if specified
+    if args.date:
+        config.date_from = args.date
+
+    if not config.date_from:
+        config.date_from = (date.today() - timedelta(days=1)).isoformat()
+    if not config.hf_date:
+        config.hf_date = date.today().isoformat()
 
     # Step 1: Fetch & Rank (Track A)
-    papers = fetch_papers(config, date_from)
-    print(f"   Found {len(papers)} relevant papers")
+    logger.info(f"📰 Fetching papers from {config.date_from}...")
+    all_papers = fetch_all_papers(config)
+    logger.info(f"   Fetched {len(all_papers)} papers")
 
-    if not papers:
-        print("   No papers found. Done.")
+    db.init_db(config.db_path)
+    unseen_papers = db.filter_seen(all_papers, db_path=config.db_path)
+    logger.info(f"   {len(unseen_papers)} new (unseen) papers")
+
+    ranked_papers = ranker.rank_papers(
+        papers=unseen_papers,
+        interests=config.interests,
+        min_score=config.min_score,
+    )
+    logger.info(f"   {len(ranked_papers)} relevant after ranking")
+
+    if not ranked_papers:
+        logger.info("No relevant papers found. Done.")
         return
 
+    # Save ranked papers as JSON if requested
+    if args.output:
+        payload = {
+            "date": config.date_from,
+            "papers": [p.to_dict() for p in ranked_papers],
+        }
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info(f"Saved ranked papers to {out_path}")
+
     # Step 2: Summarize (Track B)
-    print("🤖 Summarizing with LLM...")
-    result = summarize_batch(papers, config.get("llm", {}))
+    papers_dicts = [p.to_dict() for p in ranked_papers]
+    logger.info("🤖 Summarizing with LLM...")
+    result = summarize_batch(papers_dicts, config.llm)
 
     # Step 3: Publish (Track B)
     if args.dry_run:
@@ -126,8 +165,23 @@ def main():
         print("=" * 60)
         print(f"📊 Stats: {json.dumps(result.stats, indent=2)}")
     else:
-        results = publish_digest(result.digest, result.stats, config)
-        print(f"✅ Published to: {json.dumps(results, indent=2)}")
+        # Merge config for publisher
+        pub_config = {
+            "delivery": config.delivery,
+            "digest": config.digest,
+        }
+        results = publish_digest(result.digest, result.stats, pub_config)
+        logger.info(f"✅ Published to: {json.dumps(results, indent=2)}")
+
+    # Step 4: Mark seen in DB
+    for paper in ranked_papers:
+        db.mark_seen(
+            paper_or_id=paper.id,
+            score=paper.score,
+            title=paper.title,
+            digest_date=date.today().isoformat(),
+            db_path=config.db_path,
+        )
 
 
 if __name__ == "__main__":

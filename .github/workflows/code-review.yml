@@ -18,7 +18,7 @@ jobs:
       - name: Get changed files
         id: changed
         run: |
-          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only | grep '\.py$' | tr '\n' ' ')
+          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only | grep '\.py$\|\.yaml$\|\.yml$\|\.sh$' | tr '\n' ' ')
           echo "files=$FILES" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -27,22 +27,24 @@ jobs:
         if: steps.changed.outputs.files != ''
         id: prepare
         run: |
-          # Get the full diff
           DIFF=$(gh pr diff ${{ github.event.pull_request.number }})
-          echo "diff<<EOF" >> $GITHUB_OUTPUT
-          echo "$DIFF" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "diff<<EOFDELIM"
+            echo "$DIFF"
+            echo "EOFDELIM"
+          } >> $GITHUB_OUTPUT
 
-          # Get changed file contents
           CONTENTS=""
           for f in ${{ steps.changed.outputs.files }}; do
             if [ -f "$f" ]; then
-              CONTENTS+="--- $f ---\n\`\`\`python\n$(cat $f)\n\`\`\`\n\n"
+              CONTENTS+="--- $f ---\n\`\`\`\n$(cat "$f")\n\`\`\`\n\n"
             fi
           done
-          echo "contents<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$CONTENTS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "contents<<EOFDELIM"
+            echo -e "$CONTENTS"
+            echo "EOFDELIM"
+          } >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -50,7 +52,8 @@ jobs:
         if: steps.changed.outputs.files != ''
         id: review
         run: |
-          PROMPT="You are a senior code reviewer. Review this PR for:
+          PROMPT="You are a senior code reviewer for Paper Lead project (AI Research Digest Agent).
+Review this PR for:
 
 1. 🐛 Bugs or logic errors
 2. 🔒 Security issues
@@ -66,7 +69,8 @@ ${{ steps.prepare.outputs.diff }}
 Full file contents:
 ${{ steps.prepare.outputs.contents }}
 
-Write a structured review in markdown. Be concise but thorough. Use Thai for explanations, English for code."
+Write a structured review in markdown. Be concise but thorough. Use Thai for explanations, English for code.
+Categorize issues as 🔴 (must fix), 🟡 (should fix), 🟢 (nice to have)."
 
           RESPONSE=$(curl -s -X POST "${{ secrets.SIAM_AI_BASE_URL }}/v1/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.SIAM_AI_API_KEY }}" \
@@ -81,9 +85,11 @@ Write a structured review in markdown. Be concise but thorough. Use Thai for exp
               }')")
 
           REVIEW=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "❌ Review failed — LLM did not return content"')
-          echo "review<<EOF" >> $GITHUB_OUTPUT
-          echo "$REVIEW" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "review<<EOFDELIM"
+            echo "$REVIEW"
+            echo "EOFDELIM"
+          } >> $GITHUB_OUTPUT
 
       - name: Post review comment
         if: steps.changed.outputs.files != ''
@@ -93,6 +99,6 @@ Write a structured review in markdown. Be concise but thorough. Use Thai for exp
 ${{ steps.review.outputs.review }}
 
 ---
-*Auto-reviewed by KIMI-2.7 via Siam AI Gateway*"
+*Auto-reviewed by [KIMI-2.7](https://gateway-llm.siam.ai) via Siam AI Gateway*"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
