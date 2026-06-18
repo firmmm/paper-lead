@@ -1,0 +1,15 @@
+{
+  "categories": ["cs.AI", "cs.LG", "cs.CL"],
+  "max_results": 100,
+  "date_from": "2026-06-17",
+  "hf_date": "2026-06-18",
+  "min_score": 0.3,
+  "db_path": "data/paper_lead.sqlite3",
+  "interests": {
+    "agents": ["agent", "tool use", "planning", "workflow"],
+    "rag": ["rag", "retrieval", "reranking"],
+    "multimodal": ["multimodal", "vision language", "image"],
+    "efficiency": ["quantization", "distillation", "pruning"],
+    "architecture": ["transformer", "attention", "mixture of experts", "moe"]
+  }
+}
