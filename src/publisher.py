@@ -11,6 +11,10 @@ from typing import Optional
 
 import requests
 import yaml
+from dotenv import load_dotenv
+
+# โหลด .env
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 def publish_digest(
@@ -44,8 +48,9 @@ def publish_digest(
         results["slack"] = "sent" if ok else "failed"
 
     # 3. Send to Discord
-    if webhook := delivery.get("discord", {}).get("webhook"):
-        ok = _send_discord(webhook, digest_content, stats)
+    discord_webhook = delivery.get("discord", {}).get("webhook") or os.environ.get("DISCORD_WEBHOOK")
+    if discord_webhook:
+        ok = _send_discord(discord_webhook, digest_content, stats)
         results["discord"] = "sent" if ok else "failed"
 
     return results
