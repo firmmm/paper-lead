@@ -16,9 +16,9 @@
   },
   "llm": {
     "provider": "openai",
-    "model": "GLM-5",
+    "model": "GLM-5.2",
     "base_url": "https://gateway-llm.siam.ai",
-    "fallbacks": ["GEMMA-4"]
+    "fallbacks": ["GLM-5", "GEMMA-4"]
   },
   "delivery": {
     "file": true
