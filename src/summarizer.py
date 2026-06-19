@@ -1,11 +1,13 @@
 """Paper Lead - Summarizer (Track B)
 
-Receives a list of papers, summarizes them via LLM, categorizes, and produces a digest markdown.
+Receives a list of papers, summarizes them via LLM in batches,
+categorizes, and produces a digest markdown.
 """
 
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -20,6 +22,13 @@ logger = logging.getLogger(__name__)
 
 # Load .env
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+# Max papers per LLM call to avoid timeout
+BATCH_SIZE = 10
+# Seconds to wait between batch calls (rate-limit safety)
+BATCH_DELAY = 2
+# Seconds before falling back to next model
+FALLBACK_TIMEOUT = 60
 
 
 @dataclass
@@ -68,13 +77,64 @@ def categorize_papers(papers: list[RankedPaper]) -> dict:
     return categories
 
 
+def _build_papers_text(papers: list[RankedPaper], offset: int = 0) -> str:
+    """Build text representation of papers for LLM prompt."""
+    papers_text = ""
+    for i, p in enumerate(papers, offset + 1):
+        abstract_text = p.abstract[:500]
+        if len(p.abstract) > 500:
+            abstract_text += "..."
+        papers_text += f"\n---\nPaper {i}:\n"
+        papers_text += f"Title: {p.title}\n"
+        papers_text += f"Abstract: {abstract_text}\n"
+        papers_text += f"URL: {p.url}\n"
+        papers_text += f"Relevance Score: {p.score}\n"
+        papers_text += f"Topics: {', '.join(p.topics)}\n"
+    return papers_text
+
+
+def _call_llm(client: OpenAI, model: str, system_prompt: str, user_prompt: str, timeout: int = FALLBACK_TIMEOUT, fallbacks: list[str] | None = None) -> str | None:
+    """Call LLM with timeout and fallback models. Returns content or None on failure."""
+    models_to_try = [model]
+    if fallbacks:
+        models_to_try.extend(fallbacks)
+
+    for i, m in enumerate(models_to_try):
+        try:
+            logger.info(f"Calling LLM: {m} (attempt {i+1}/{len(models_to_try)})")
+            response = client.chat.completions.create(
+                model=m,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+                timeout=timeout,
+            )
+            choice = response.choices[0]
+            if choice.finish_reason == "length":
+                logger.warning("LLM response was truncated (finish_reason=length). Digest may be incomplete.")
+            logger.info(f"LLM responded successfully with {m}")
+            return choice.message.content
+        except Exception as e:
+            logger.warning(f"LLM call with {m} failed: {e}")
+            if i < len(models_to_try) - 1:
+                logger.info(f"Falling back to {models_to_try[i+1]}...")
+            continue
+
+    logger.error("All LLM models failed")
+    return None
+
+
 def summarize_batch(
     papers: list[dict],
     llm_config: dict,
     prompt_template: str = None,
 ) -> DigestResult:
     """
-    Summarize a batch of papers via LLM.
+    Summarize a batch of papers via LLM, splitting into sub-batches
+    if there are too many papers for a single call.
 
     Args:
         papers: list of paper dicts (from Track A interface via to_dict())
@@ -107,44 +167,22 @@ def summarize_batch(
     # Categorize
     categories = categorize_papers(ranked_papers)
 
-    # Build paper summary for LLM - only append "..." when actually truncated
-    papers_text = ""
-    for i, p in enumerate(ranked_papers, 1):
-        abstract_text = p.abstract[:500]
-        if len(p.abstract) > 500:
-            abstract_text += "..."
-        papers_text += f"\n---\nPaper {i}:\n"
-        papers_text += f"Title: {p.title}\n"
-        papers_text += f"Abstract: {abstract_text}\n"
-        papers_text += f"URL: {p.url}\n"
-        papers_text += f"Relevance Score: {p.score}\n"
-        papers_text += f"Topics: {', '.join(p.topics)}\n"
-
-    # Call LLM
     today = date.today().isoformat()
-    digest_content = None
+    model = llm_config.get("model", "gpt-4o-mini")
+    fallbacks = llm_config.get("fallbacks", [])
 
-    try:
-        client = init_llm_client(llm_config)
-        response = client.chat.completions.create(
-            model=llm_config.get("model", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": prompt_template},
-                {"role": "user", "content": f"Date: {today}\n\nPapers to summarize:\n\n{papers_text}\n\nCreate the digest now."},
-            ],
-            temperature=0.3,
-            max_tokens=2000,
-        )
-        choice = response.choices[0]
-        if choice.finish_reason == "length":
-            logger.warning("LLM response was truncated (finish_reason=length). Digest may be incomplete.")
-        digest_content = choice.message.content
-    except ValueError as e:
-        logger.error(f"LLM client init failed: {e}")
-    except Exception as e:
-        logger.error(f"LLM summarization failed: {e}")
+    # Split into sub-batches
+    total = len(ranked_papers)
+    if total <= BATCH_SIZE:
+        # Small enough for a single call
+        papers_text = _build_papers_text(ranked_papers)
+        digest_content = _summarize_single_batch(llm_config, model, fallbacks, prompt_template, papers_text, today)
+    else:
+        # Split into multiple batches
+        logger.info(f"Splitting {total} papers into batches of {BATCH_SIZE}")
+        digest_content = _summarize_multi_batch(ranked_papers, llm_config, model, fallbacks, prompt_template, today)
 
-    # Fallback: manual digest if LLM fails
+    # Fallback: manual digest if LLM fails completely
     if digest_content is None:
         logger.info("Using manual digest fallback")
         digest_content = _manual_digest(categories, today)
@@ -158,6 +196,95 @@ def summarize_batch(
     }
 
     return DigestResult(digest=digest_content, stats=stats)
+
+
+def _summarize_single_batch(
+    llm_config: dict,
+    model: str,
+    fallbacks: list[str],
+    system_prompt: str,
+    papers_text: str,
+    today: str,
+) -> str | None:
+    """Summarize a single batch of papers via LLM."""
+    try:
+        client = init_llm_client(llm_config)
+    except ValueError as e:
+        logger.error(f"LLM client init failed: {e}")
+        return None
+
+    user_prompt = f"Date: {today}\n\nPapers to summarize:\n\n{papers_text}\n\nCreate the digest now."
+    return _call_llm(client, model, system_prompt, user_prompt, fallbacks=fallbacks)
+
+
+def _summarize_multi_batch(
+    ranked_papers: list[RankedPaper],
+    llm_config: dict,
+    model: str,
+    fallbacks: list[str],
+    system_prompt: str,
+    today: str,
+) -> str | None:
+    """Summarize papers in multiple batches, then merge results."""
+    try:
+        client = init_llm_client(llm_config)
+    except ValueError as e:
+        logger.error(f"LLM client init failed: {e}")
+        return None
+
+    batch_summaries: list[str] = []
+    total = len(ranked_papers)
+
+    for i in range(0, total, BATCH_SIZE):
+        batch = ranked_papers[i : i + BATCH_SIZE]
+        batch_num = i // BATCH_SIZE + 1
+        total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+
+        logger.info(f"Summarizing batch {batch_num}/{total_batches} ({len(batch)} papers)...")
+
+        papers_text = _build_papers_text(batch, offset=i)
+        user_prompt = (
+            f"Date: {today}\n"
+            f"This is batch {batch_num} of {total_batches}.\n\n"
+            f"Papers to summarize:\n\n{papers_text}\n\n"
+            f"Create the digest for this batch."
+        )
+
+        content = _call_llm(client, model, system_prompt, user_prompt, fallbacks=fallbacks)
+        if content:
+            batch_summaries.append(content)
+            logger.info(f"Batch {batch_num}/{total_batches} done")
+        else:
+            logger.warning(f"Batch {batch_num}/{total_batches} failed, skipping")
+
+        # Rate-limit delay between batches
+        if i + BATCH_SIZE < total:
+            time.sleep(BATCH_DELAY)
+
+    if not batch_summaries:
+        return None
+
+    # If only one batch succeeded, return it directly
+    if len(batch_summaries) == 1:
+        return batch_summaries[0]
+
+    # Merge multiple batch summaries into one digest
+    logger.info(f"Merging {len(batch_summaries)} batch summaries...")
+    merged_text = "\n\n".join(
+        f"--- Batch {i+1} ---\n{summary}"
+        for i, summary in enumerate(batch_summaries)
+    )
+
+    merge_prompt = (
+        f"Date: {today}\n\n"
+        f"The following are digest summaries from {len(batch_summaries)} batches of papers.\n"
+        f"Merge them into a single cohesive digest. Remove duplicates, "
+        f"consolidate categories (Must Read, Worth Reading, Tools), and keep the best insights.\n\n"
+        f"{merged_text}"
+    )
+
+    merged = _call_llm(client, model, system_prompt, merge_prompt, timeout=90, fallbacks=fallbacks)
+    return merged or merged_text  # Fall back to raw concatenation if merge fails
 
 
 def _manual_digest(categories: dict, today: str) -> str:

@@ -28,11 +28,13 @@ class Config:
     date_from: str = ""
     hf_date: str = ""
     min_score: float = 0.1
+    max_papers: int = 20
     db_path: str = "data/paper_lead.sqlite3"
     llm: dict = field(default_factory=lambda: {
         "provider": "openai",
         "model": "GEMMA-4",
         "base_url": "https://gateway-llm.siam.ai",
+        "fallbacks": ["GLM-5"],
     })
     delivery: dict = field(default_factory=dict)
     digest: dict = field(default_factory=dict)
@@ -101,7 +103,11 @@ def fetch_all_papers(config: Config) -> list[Paper]:
         max_results=config.max_results,
         date_from=date_from,
     )
-    hf_papers = fetcher.fetch_huggingface_daily(hf_date)
+    try:
+        hf_papers = fetcher.fetch_huggingface_daily(hf_date)
+    except Exception as e:
+        logger.warning(f"HF fetch failed (skipping): {e}")
+        hf_papers = []
 
     # Merge - deduplicate by paper id
     merged: dict[str, Paper] = {p.id: p for p in arxiv_papers}
@@ -154,6 +160,12 @@ def main():
     if not ranked_papers:
         logger.info("No relevant papers found. Done.")
         return
+
+    # Limit papers sent to LLM to avoid timeout
+    max_papers = config.max_papers if hasattr(config, 'max_papers') and config.max_papers else 20
+    if len(ranked_papers) > max_papers:
+        logger.info(f"   Limiting to top {max_papers} papers for summarization (out of {len(ranked_papers)})")
+        ranked_papers = ranked_papers[:max_papers]
 
     # Save ranked papers as JSON if requested
     if args.output:
