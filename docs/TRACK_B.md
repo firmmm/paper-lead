@@ -20,7 +20,7 @@ F เอา Track B — สรุป paper + publish digest
 pip install -r requirements.txt
 
 # ตั้ง API key
-export SIAM_AI_API_KEY=sk-xxx  # หรือ OPENAI_API_KEY ถ้าใช้ provider อื่น
+export GATEWAY_API_KEY=sk-xxx  # หรือ OPENAI_API_KEY ถ้าใช้ provider อื่น
 
 # Dry run (ไม่บันทึกไฟล์)
 cd src

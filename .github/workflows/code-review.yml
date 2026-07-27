@@ -72,8 +72,8 @@ ${{ steps.prepare.outputs.contents }}
 Write a structured review in markdown. Be concise but thorough. Use Thai for explanations, English for code.
 Categorize issues as 🔴 (must fix), 🟡 (should fix), 🟢 (nice to have)."
 
-          RESPONSE=$(curl -s -X POST "${{ secrets.SIAM_AI_BASE_URL }}/v1/chat/completions" \
-            -H "Authorization: Bearer ${{ secrets.SIAM_AI_API_KEY }}" \
+          RESPONSE=$(curl -s -X POST "${{ secrets.GATEWAY_BASE_URL }}/v1/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.GATEWAY_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg prompt "$PROMPT" \

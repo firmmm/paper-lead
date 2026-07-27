@@ -46,9 +46,9 @@ def load_prompt_template(path: str = None) -> str:
 
 def init_llm_client(config: dict) -> OpenAI:
     """Create OpenAI client from config. Raises ValueError if no API key found."""
-    api_key = os.environ.get("SIAM_AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("GATEWAY_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise ValueError("Missing API key: set SIAM_AI_API_KEY or OPENAI_API_KEY in .env")
+        raise ValueError("Missing API key: set GATEWAY_API_KEY or OPENAI_API_KEY in .env")
     kwargs = {"api_key": api_key}
     if base_url := config.get("base_url"):
         kwargs["base_url"] = base_url
