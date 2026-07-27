@@ -161,7 +161,7 @@ def fetch_arxiv(
         sort_order=arxiv.SortOrder.Descending,
     )
 
-    client = arxiv.Client(page_size=min(100, max_results))
+    client = arxiv.Client(page_size=min(100, max_results), delay_seconds=5.0, num_retries=5)
     papers: list[Paper] = []
 
     for result in client.results(search):

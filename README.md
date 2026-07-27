@@ -62,13 +62,18 @@ HF Daily ---/     (Track A)   (Track A)    (Track B)     (Track B)
 ```bash
 pip install -r requirements.txt
 cp .env.example .env  # add your API keys
-cp config.example.yaml config.yaml  # customize interests
-python src/main.py --dry-run
+cp config.example.yaml config.yaml  # copy template
+# edit interests.yaml to customize your research topics
+python src/main.py --config config.yaml --dry-run
 ```
 
 ## Config
 
-See `config.example.yaml`
+- `config.yaml` — main config (categories, LLM, delivery, thresholds)
+- `interests.yaml` — keyword profiles used by the ranker (edit this to tune what papers match)
+- `config.example.yaml` — template to copy when setting up
+
+See `config.example.yaml` and `interests.yaml` for available options.
 
 ## Output
 

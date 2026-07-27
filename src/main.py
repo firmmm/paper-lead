@@ -137,7 +137,7 @@ def main():
         config.date_from = args.date
 
     if not config.date_from:
-        config.date_from = (date.today() - timedelta(days=1)).isoformat()
+        config.date_from = (date.today() - timedelta(days=3)).isoformat()
     if not config.hf_date:
         config.hf_date = date.today().isoformat()
 
