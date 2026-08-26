@@ -32,9 +32,9 @@ class Config:
     db_path: str = "data/paper_lead.sqlite3"
     llm: dict = field(default_factory=lambda: {
         "provider": "openai",
-        "model": "GEMMA-4",
+        "model": "GEMMA4-26B-A4B-it",
         "base_url": "https://gateway-llm.siam.ai",
-        "fallbacks": ["GLM-5"],
+        "fallbacks": ["GLM-5.2"],
     })
     delivery: dict = field(default_factory=dict)
     digest: dict = field(default_factory=dict)
@@ -98,11 +98,15 @@ def fetch_all_papers(config: Config) -> list[Paper]:
     date_from = _parse_date(config.date_from) or (date.today() - timedelta(days=1))
     hf_date = _parse_date(config.hf_date) or date.today()
 
-    arxiv_papers = fetcher.fetch_arxiv(
-        categories=config.categories,
-        max_results=config.max_results,
-        date_from=date_from,
-    )
+    try:
+        arxiv_papers = fetcher.fetch_arxiv(
+            categories=config.categories,
+            max_results=config.max_results,
+            date_from=date_from,
+        )
+    except Exception as e:
+        logger.warning(f"arXiv fetch failed (skipping): {e}")
+        arxiv_papers = []
     try:
         hf_papers = fetcher.fetch_huggingface_daily(hf_date)
     except Exception as e:
