@@ -143,7 +143,13 @@ def _send_discord(webhook_url: str, content: str, stats: dict) -> bool:
     first = True
 
     while remaining:
-        available = max_per_msg - (len(prefix) if first else 0)
+        # Reserve room for the prefix on this chunk
+        if not chunks:
+            overhead = len(prefix)
+        else:
+            # approximate worst-case continuation prefix length
+            overhead = len(f"**(continued {len(chunks)+1}/99)**\n")
+        available = max_per_msg - overhead
         if len(remaining) <= available:
             chunks.append(remaining)
             break
@@ -153,7 +159,6 @@ def _send_discord(webhook_url: str, content: str, stats: dict) -> bool:
             split_at = available
         chunks.append(remaining[:split_at])
         remaining = remaining[split_at:].lstrip("\n")
-        first = False
 
     all_ok = True
     for i, chunk in enumerate(chunks):
