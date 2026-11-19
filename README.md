@@ -100,6 +100,56 @@ docker compose up -d api      # serve KB API
 docker compose run --rm ingest  # manual daily run
 ```
 
+## MCP server (for AI clients)
+
+`paper-lead-mcp` (port 9000) exposes the KB as tools for AI clients
+(Claude, Cursor, agents…) over streamable HTTP — no doc-reading needed,
+the tool specs are embedded in the protocol.
+
+**Endpoint:** `http://<server-ip>:9000/mcp` · **Tools:** `search_kb` (Thai+EN
+FTS), `get_digest`, `get_paper`, `list_digest_days`, `kb_stats` — all read-only.
+
+**Cursor** — `.cursor/mcp.json` in your project:
+```json
+{
+  "mcpServers": {
+    "paper-lead": { "url": "http://172.16.30.208:9000/mcp" }
+  }
+}
+```
+
+**Claude Code** — one-time add:
+```bash
+claude mcp add --transport http paper-lead http://172.16.30.208:9000/mcp
+```
+
+**Claude Desktop** — Settings → Connectors → Add custom connector →
+paste the URL above (older builds: use the `mcp-remote` npm wrapper in
+`claude_desktop_config.json`).
+
+**Python agent** (any code that speaks MCP):
+```python
+import asyncio
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+async def main():
+    async with streamablehttp_client("http://172.16.30.208:9000/mcp") as (r, w, _):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            res = await s.call_tool("search_kb", {"query": "agent memory"})
+            print(res.content[0].text)
+
+asyncio.run(main())
+```
+
+Then just ask the AI naturally: *"paper ล่าสุดเรื่อง KV cache มีอะไรบ้าง"* —
+it picks the tools by itself.
+
+> ⚠️ **Auth:** the MCP endpoint currently has **no auth** — safe only on the
+> trusted internal network (data is read-only). Add an auth provider before
+> exposing it past the firewall. REST API auth is separate (`KB_API_KEY`).
+
 ## License
 
 MIT

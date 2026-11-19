@@ -56,6 +56,11 @@ pytest tests/
 - `src/api.py` — read-only FastAPI. Runs as docker container `paper-lead-api`
   (port 8000, `restart: unless-stopped`, survives reboot; docker.service enabled).
   Key: `.env` `KB_API_KEY` (X-API-Key header).
+- `src/mcp_server.py` — MCP server (streamable HTTP, port 9000, container
+  `paper-lead-mcp`, profile `mcp`). Same read-only DB. SDK pinned `mcp<2`
+  (2.x renamed FastMCP). Gotcha: FastMCP must be constructed with the real
+  host — building with localhost enables DNS-rebind protection and returns
+  421 to IP callers. No auth on MCP yet (internal only).
 - Tables `digest_days`/`digest_entries`/FTS are KB-owned; the cron digest job
   is the only writer of `papers`. Parser writes KB tables right after.
 - Old-format digests handled: emoji section headers, `##` headers, bullet
