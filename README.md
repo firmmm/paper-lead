@@ -80,12 +80,14 @@ Diagrams: `docs/data-flow.png` (system flow) · `docs/data-model.png` (KB schema
 
 ## Microservices (Docker)
 
-One shared image (`ppl:v0.1.0`), two services (`docker-compose.yml`):
+One shared image (`ppl:v0.1.0`), three services (`docker-compose.yml`):
 
 - **api** — long-running KB API: `docker compose up -d api` (port 8000,
   healthcheck, `restart: unless-stopped` — survives reboots, docker is enabled)
+- **mcp** — MCP server for AI clients (Claude/Cursor/agents): port 9000,
+  `docker compose --profile mcp up -d mcp`
 - **ingest** — one-shot daily worker: `docker compose run --rm ingest`
-  (digest pipeline + KB refresh in one run)
+  (digest pipeline + KB refresh + PDF top-up in one run)
 
 `data/` and `digest/` are host bind mounts, so all state stays on the host
 and container files land as `saiuser`-owned (image runs as uid 1001).

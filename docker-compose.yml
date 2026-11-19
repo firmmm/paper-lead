@@ -44,3 +44,17 @@ services:
       - ./.env:/app/.env:ro       # GATEWAY_API_KEY, DISCORD_WEBHOOK
     # Daily job: digest pipeline + KB refresh + PDF top-up in one run
     command: sh -c "python -m src.main --config config.yaml && python -m src.parse_digests && python -m src.fetch_pdfs --limit 30"
+
+  mcp:
+    image: ppl:v0.1.0      # same shared image
+    container_name: paper-lead-mcp
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./data:/app/data          # sqlite KB, read-only in code
+      - ./.env:/app/.env:ro
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=9000
+    restart: unless-stopped
+    command: ["python", "-m", "src.mcp_server"]
