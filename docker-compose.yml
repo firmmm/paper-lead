@@ -5,7 +5,7 @@ name: paper-lead
 #   ingest — one-shot daily worker (fetch → rank → summarize → publish → parse KB)
 #            started by the OpenClaw cron: `docker compose run --rm ingest`
 #
-# Both services share ONE image (paper-lead:latest), built from the api
+# Both services share ONE image (ppl:v0.1.0), built from the api
 # service. This is deliberate: `docker compose build` does not build
 # profile-gated services, so a separate ingest build would silently go stale.
 #
@@ -15,7 +15,7 @@ name: paper-lead
 services:
   api:
     build: .
-    image: paper-lead:latest      # the single shared image both services run
+    image: ppl:v0.1.0      # the single shared image both services run
     container_name: paper-lead-api
     ports:
       - "8000:8000"
@@ -31,7 +31,7 @@ services:
       start_period: 10s
 
   ingest:
-    image: paper-lead:latest      # same image as api — never built separately
+    image: ppl:v0.1.0      # same image as api — never built separately
     profiles: ["tools"]           # never started by `up -d`; run via `compose run`
     volumes:
       - ./data:/app/data

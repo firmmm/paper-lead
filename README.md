@@ -110,7 +110,7 @@ Data flow diagram: `docs/data-flow.html` (SVG in page) / `docs/data-flow.png`.
 
 ## Microservices (Docker)
 
-One image, two services (`docker-compose.yml`):
+One shared image (`ppl:v0.1.0`), two services (`docker-compose.yml`):
 
 - **api** — long-running KB API: `docker compose up -d api` (port 8000,
   healthcheck, `restart: unless-stopped` — survives reboots, docker is enabled)
