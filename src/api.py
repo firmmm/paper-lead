@@ -39,9 +39,21 @@ app = FastAPI(
     title="Paper Lead KB API",
     version="1.0.0",
     description=(
-        "Read-only knowledge-base API over the Paper Lead SQLite DB: "
-        "paper metadata (papers), daily Thai digest summaries (digest_entries), "
-        "and full-text search (FTS5). Auth: X-API-Key header when KB_API_KEY is set."
+        "**What is this?** A knowledge base of AI research papers (cs.AI/LG/CL) "
+        "built daily since June 2026.\n\n"
+        "**Mental model (3 terms):**\n"
+        "- **Paper** — one arXiv paper: original English title, abstract, "
+        "authors, score. *The raw material.*\n"
+        "- **Digest** — the daily published summary (Thai), one per day. "
+        "*The analyst's report of that day.*\n"
+        "- **Entry** — one item inside a digest: a paper (or tool) with its Thai "
+        "summary, why-it-matters, and section: `must_read` | `worth_reading` | `tools`. "
+        "*One row = one thing worth reading that day.*\n\n"
+        "Papers and entries link via arXiv id — ask either side: \"what got "
+        "summarized on Nov 18?\" (digests) or \"how was this paper judged?\" "
+        "(papers/{id}).\n\n"
+        "Everything here is **read-only**. Auth: `X-API-Key` header when "
+        "KB_API_KEY is set on the server (currently disabled)."
     ),
 )
 
@@ -176,7 +188,11 @@ def list_papers(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    """List papers. Set with_abstract=1 to get full abstracts inline."""
+    """List papers (arXiv originals: title/authors/abstract).
+
+    This is the raw-paper view — no Thai summaries here, those live in
+    /digests. Set with_abstract=1 for full abstracts, or use `q` for FTS
+    over title+abstract. Paper detail (incl. its digest entries): /papers/{id}."""
     for value, name in ((date_, "date"), (from_, "from"), (to_, "to")):
         if value:
             _validate_date(value, name)
@@ -268,7 +284,8 @@ def _count_papers_fts(
 
 @app.get("/papers/{arxiv_id}")
 def get_paper(arxiv_id: str):
-    """One paper: full metadata + abstract + any digest entries (Thai summaries)."""
+    """One paper by arXiv id: full metadata + abstract + every digest entry
+    written about it (Thai summary, why-note, section). The \"raw + judged\" view."""
     with connect_ro() as conn:
         row = conn.execute("SELECT * FROM papers WHERE id = ?", (arxiv_id,)).fetchone()
         if not row:
@@ -310,7 +327,10 @@ def list_digests(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    """List available digest days (newest first)."""
+    """List available digest days (newest first).
+
+    Each row = one day's Thai digest: its TL;DR, scan stats, and entry counts.
+    Use `date` from here in /digests/{date} for the full content."""
     clauses, params = ["1=1"], []
     if from_:
         _validate_date(from_, "from")
@@ -347,7 +367,11 @@ def list_digests(
 
 @app.get("/digests/{day}")
 def get_digest(day: str):
-    """One digest day: TL;DR + entries grouped by section."""
+    """One day's digest: TL;DR + every entry grouped by section.
+
+    Sections: `must_read` (don't miss), `worth_reading` (interesting),
+    `tools` (frameworks/benchmarks). Entries carry Thai summaries + why-notes.
+    Prefer this over /papers when you want \"what happened that day\"."""
     _validate_date(day, "date")
     with connect_ro() as conn:
         row = conn.execute("SELECT * FROM digest_days WHERE date = ?", (day,)).fetchone()
@@ -384,7 +408,10 @@ def search(
     section: str | None = Query(None, description="must_read | worth_reading | tools"),
     limit: int = Query(20, ge=1, le=100),
 ):
-    """Full-text search over digest entries (Thai+English) AND paper abstracts."""
+    """Full-text search across BOTH views at once:
+    digest entries (Thai summaries + why-notes) AND paper abstracts (English).
+    Thai queries work (e.g. ความปลอดภัย) — matched against Thai summaries.
+    Filter to one section with `section=must_read|worth_reading|tools`."""
     fts = _fts_query(q)
     if section and section not in SECTIONS:
         raise HTTPException(400, f"invalid section: {section!r} (one of {SECTIONS})")

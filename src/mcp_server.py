@@ -49,11 +49,16 @@ mcp = FastMCP(
     host=MCP_HOST,
     port=MCP_PORT,
     instructions=(
-        "Paper Lead knowledge base: daily AI-research digests (Thai summaries) "
-        "over cs.AI/cs.LG/cs.CL papers since June 2026. Use search_kb for "
-        "free-text search (Thai or English), get_digest for a specific day, "
-        "get_paper for one paper's metadata + how it was summarized. "
-        "Start from kb_stats if unsure."
+        "A daily AI-research knowledge base (cs.AI/cs.LG/cs.CL, Thai "
+        "summaries, since June 2026).\n\n"
+        "Three concepts \u2014 a PAPER is the raw arXiv record (English title, "
+        "abstract, authors); a DIGEST is one day's published report (Thai, "
+        "with a TL;DR); an ENTRY is one item inside a digest \u2014 a paper or "
+        "tool with a Thai summary, a why-it-matters note, and a section: "
+        "must_read | worth_reading | tools.\n\n"
+        "Typical questions \u2192 tools: \"search for X\" \u2192 search_kb; \"what was "
+        "in yesterday's digest\" \u2192 get_digest; \"tell me about paper "
+        "2611.21478\" \u2192 get_paper. Unsure? Start with kb_stats."
     ),
 )
 
@@ -131,11 +136,10 @@ def search_kb(
     section: str | None = None,
     limit: int = 10,
 ) -> dict:
-    """Full-text search (Thai or English) over daily Thai summaries, why-notes
-    and paper abstracts. Optional section filter: must_read | worth_reading | tools.
-
-    Returns matching digest entries and papers (ids + titles). Use get_paper
-    for full details of a hit.
+    """Free-text search (Thai OR English) across the whole KB at once:
+    digest entries (Thai summaries + why-notes) and paper abstracts.
+    Optional section filter: must_read | worth_reading | tools.
+    Returns matching entries + papers; use get_paper for full details of a hit.
     """
     limit = max(1, min(limit, 50))
     if section and section not in SECTIONS:
@@ -169,8 +173,10 @@ def search_kb(
 
 @mcp.tool()
 def get_digest(day: str) -> dict:
-    """One day's digest: TL;DR, analyst note, stats, and every entry
-    (Thai summary + why) grouped by section. day format: YYYY-MM-DD."""
+    """One day's digest report (day = YYYY-MM-DD): TL;DR, analyst note, stats,
+    and every entry grouped by section \u2014 must_read (don't miss),
+    worth_reading (interesting), tools (frameworks/benchmarks).
+    Answers "what happened that day?". Use list_digest_days to find days."""
     _validate_date(day)
     with connect_ro() as conn:
         row = conn.execute("SELECT * FROM digest_days WHERE date = ?", (day,)).fetchone()
@@ -207,8 +213,9 @@ def list_digest_days(
     to_date: str | None = None,
     limit: int = 30,
 ) -> dict:
-    """Available digest days, newest first (with per-day counts).
-    Optional range filters, format YYYY-MM-DD."""
+    """Available digest days (days with a published digest), newest first,
+    with per-day counts. Optional from_date/to_date filters (YYYY-MM-DD).
+    Feed a date from here into get_digest."""
     limit = max(1, min(limit, 100))
     clauses, params = ["1=1"], []
     if from_date:
@@ -231,8 +238,9 @@ def list_digest_days(
 
 @mcp.tool()
 def get_paper(arxiv_id: str) -> dict:
-    """One paper by arXiv id (e.g. 2611.21478): full metadata, abstract,
-    and any digest entries written about it (Thai summaries + why)."""
+    """One paper by arXiv id (e.g. "2611.21478"): the raw record \u2014 English
+    title, abstract, authors \u2014 PLUS every digest entry written about it
+    (Thai summary, why-note, section). The "raw + how it was judged" view."""
     with connect_ro() as conn:
         row = conn.execute("SELECT * FROM papers WHERE id = ?", (arxiv_id,)).fetchone()
         if not row:
