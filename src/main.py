@@ -194,7 +194,10 @@ def main():
         print(result.digest)
         print("=" * 60)
         print(f"Stats: {json.dumps(result.stats, indent=2)}")
-        publish_success = True  # dry-run counts as success
+        # Dry run must be a true no-op: no publish, no mark_seen, no DB
+        # writes — the same papers stay visible to the next real run.
+        logger.info("Dry run: skipping publish + mark_seen (DB unchanged)")
+        return
     else:
         pub_config = {
             "delivery": config.delivery,

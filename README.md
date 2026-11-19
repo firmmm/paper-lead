@@ -108,6 +108,26 @@ so the API can never corrupt the ingest pipeline.
 
 Data flow diagram: `docs/data-flow.html` (SVG in page) / `docs/data-flow.png`.
 
+## Microservices (Docker)
+
+One image, two services (`docker-compose.yml`):
+
+- **api** — long-running KB API: `docker compose up -d api` (port 8000,
+  healthcheck, `restart: unless-stopped` — survives reboots, docker is enabled)
+- **ingest** — one-shot daily worker: `docker compose run --rm ingest`
+  (digest pipeline + KB refresh in one run)
+
+`data/` and `digest/` are host bind mounts, so all state stays on the host
+and container files land as `saiuser`-owned (image runs as uid 1001).
+The OpenClaw daily cron (09:00 ICT) runs the ingest service and reports to
+Telegram; if docker is down it falls back to a host run.
+
+```bash
+docker compose build          # build image
+docker compose up -d api      # serve KB API
+docker compose run --rm ingest  # manual daily run
+```
+
 ## License
 
 MIT

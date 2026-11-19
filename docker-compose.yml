@@ -1,0 +1,43 @@
+name: paper-lead
+
+# Microservice layout:
+#   api    — long-running FastAPI (read-only KB service), port 8000
+#   ingest — one-shot daily worker (fetch → rank → summarize → publish → parse KB)
+#            started by the OpenClaw cron: `docker compose run --rm ingest`
+#
+# Both services share ONE image (paper-lead:latest), built from the api
+# service. This is deliberate: `docker compose build` does not build
+# profile-gated services, so a separate ingest build would silently go stale.
+#
+# SQLite (data/) and digests (digest/) are host bind mounts, so state stays
+# on the host and every service shares the same DB file.
+
+services:
+  api:
+    build: .
+    image: paper-lead:latest      # the single shared image both services run
+    container_name: paper-lead-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data          # sqlite KB; api opens it mode=ro in code
+      - ./.env:/app/.env:ro       # KB_API_KEY
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  ingest:
+    image: paper-lead:latest      # same image as api — never built separately
+    profiles: ["tools"]           # never started by `up -d`; run via `compose run`
+    volumes:
+      - ./data:/app/data
+      - ./digest:/app/digest
+      - ./config.yaml:/app/config.yaml:ro
+      - ./interests.yaml:/app/interests.yaml:ro
+      - ./.env:/app/.env:ro       # GATEWAY_API_KEY, DISCORD_WEBHOOK
+    # Daily job: digest pipeline + KB refresh in one run
+    command: sh -c "python -m src.main --config config.yaml && python -m src.parse_digests"
