@@ -98,6 +98,7 @@ python3 -m uvicorn src.api:app --host 0.0.0.0 --port 8000
 | `GET /stats` | global KB counters |
 | `GET /papers` | list/filter papers (`date`, `from`, `to`, `min_score`, `q` FTS, `with_abstract=1`) |
 | `GET /papers/{arxiv_id}` | one paper + abstract + its digest entries |
+| `GET /papers/{arxiv_id}/pdf` | the paper's PDF from the local archive (papers_pdf/) |
 | `GET /digests` | list digest days |
 | `GET /digests/{date}` | TL;DR + analyst note + entries by section |
 | `GET /digests/{date}/raw` | raw markdown of that day's digest |

@@ -25,13 +25,14 @@ from typing import Iterator
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 _REPO = Path(__file__).parent.parent
 load_dotenv(_REPO / ".env")
 
 DB_PATH = os.getenv("PAPER_LEAD_DB_PATH", str(_REPO / "data" / "paper_lead.sqlite3"))
 DIGEST_DIR = Path(os.getenv("PAPER_LEAD_DIGEST_DIR", str(_REPO / "digest")))
+PDF_DIR = Path(os.getenv("PAPER_LEAD_PDF_DIR", str(_REPO / "papers_pdf")))
 API_KEY = os.getenv("KB_API_KEY", "").strip()
 
 app = FastAPI(
@@ -289,6 +290,17 @@ def get_paper(arxiv_id: str):
         "abstract": row["abstract"],
         "digest_entries": [dict(e) for e in entries],
     }
+
+
+@app.get("/papers/{arxiv_id}/pdf")
+def get_paper_pdf(arxiv_id: str):
+    """The paper's PDF file from the local archive (papers_pdf/{id}.pdf)."""
+    if "/" in arxiv_id or "\\" in arxiv_id or ".." in arxiv_id:
+        raise HTTPException(400, "invalid id")
+    path = PDF_DIR / f"{arxiv_id}.pdf"
+    if not path.exists():
+        raise HTTPException(404, f"PDF not archived: {arxiv_id}")
+    return FileResponse(path, media_type="application/pdf", filename=f"{arxiv_id}.pdf")
 
 
 @app.get("/digests")

@@ -18,3 +18,4 @@ Dockerfile
 
 # keep the prompt template (needed by summarizer)
 !prompts/*.md
+papers_pdf/

@@ -22,6 +22,7 @@ services:
     volumes:
       - ./data:/app/data          # sqlite KB; api opens it mode=ro in code
       - ./digest:/app/digest      # raw digest markdown for /digests/{day}/raw
+      - ./papers_pdf:/app/papers_pdf:ro  # archived paper PDFs for /papers/{id}/pdf
       - ./.env:/app/.env:ro       # KB_API_KEY
     restart: unless-stopped
     healthcheck:
@@ -37,8 +38,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./digest:/app/digest
+      - ./papers_pdf:/app/papers_pdf   # archive new PDFs daily
       - ./config.yaml:/app/config.yaml:ro
       - ./interests.yaml:/app/interests.yaml:ro
       - ./.env:/app/.env:ro       # GATEWAY_API_KEY, DISCORD_WEBHOOK
-    # Daily job: digest pipeline + KB refresh in one run
-    command: sh -c "python -m src.main --config config.yaml && python -m src.parse_digests"
+    # Daily job: digest pipeline + KB refresh + PDF top-up in one run
+    command: sh -c "python -m src.main --config config.yaml && python -m src.parse_digests && python -m src.fetch_pdfs --limit 30"
