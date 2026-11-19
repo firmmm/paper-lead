@@ -80,8 +80,11 @@ Diagrams: `docs/data-flow.png` (system flow) · `docs/data-model.png` (KB schema
 
 ## Microservices (Docker)
 
-One shared image (`ppl:v0.1.0`), three services (`docker-compose.yml`):
+One shared image (`ppl:v0.1.0`), four services (`docker-compose.yml`).
+All endpoints are behind the nginx proxy on port 80 — no ports to remember:
 
+- **proxy** — nginx entry point on port 80: `http://<host>/` → api,
+  `http://<host>/mcp` → mcp (recommended URLs)
 - **api** — long-running KB API: `docker compose up -d api` (port 8000,
   healthcheck, `restart: unless-stopped` — survives reboots, docker is enabled)
 - **mcp** — MCP server for AI clients (Claude/Cursor/agents): port 9000,
@@ -106,21 +109,22 @@ docker compose run --rm ingest  # manual daily run
 (Claude, Cursor, agents…) over streamable HTTP — no doc-reading needed,
 the tool specs are embedded in the protocol.
 
-**Endpoint:** `http://<server-ip>:9000/mcp` · **Tools:** `search_kb` (Thai+EN
+**Endpoint:** `http://<server-ip>/mcp` (via the nginx proxy — port 80;
+`http://<server-ip>:9000/mcp` also works) · **Tools:** `search_kb` (Thai+EN
 FTS), `get_digest`, `get_paper`, `list_digest_days`, `kb_stats` — all read-only.
 
 **Cursor** — `.cursor/mcp.json` in your project:
 ```json
 {
   "mcpServers": {
-    "paper-lead": { "url": "http://172.16.30.208:9000/mcp" }
+    "paper-lead": { "url": "http://172.16.30.208/mcp" }
   }
 }
 ```
 
 **Claude Code** — one-time add:
 ```bash
-claude mcp add --transport http paper-lead http://172.16.30.208:9000/mcp
+claude mcp add --transport http paper-lead http://172.16.30.208/mcp
 ```
 
 **Claude Desktop** — Settings → Connectors → Add custom connector →
@@ -134,7 +138,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 async def main():
-    async with streamablehttp_client("http://172.16.30.208:9000/mcp") as (r, w, _):
+    async with streamablehttp_client("http://172.16.30.208/mcp") as (r, w, _):
         async with ClientSession(r, w) as s:
             await s.initialize()
             res = await s.call_tool("search_kb", {"query": "agent memory"})

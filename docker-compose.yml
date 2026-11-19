@@ -1,7 +1,9 @@
 name: paper-lead
 
 # Microservice layout:
+#   proxy  — nginx entry point, port 80: / -> api, /mcp -> mcp
 #   api    — long-running FastAPI (read-only KB service), port 8000
+#   mcp    — MCP server for AI clients, port 9000
 #   ingest — one-shot daily worker (fetch → rank → summarize → publish → parse KB)
 #            started by the OpenClaw cron: `docker compose run --rm ingest`
 #
@@ -58,3 +60,17 @@ services:
       - MCP_PORT=9000
     restart: unless-stopped
     command: ["python", "-m", "src.mcp_server"]
+
+  proxy:
+    image: nginx:alpine
+    container_name: paper-lead-proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/paper-lead.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - mcp
+    restart: unless-stopped
+    # Single entry point: http://<host>/ -> REST api, http://<host>/mcp -> MCP.
+    # Direct ports 8000/9000 stay exposed for existing clients.

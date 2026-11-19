@@ -1,7 +1,10 @@
 # Deploy Guide
 
-Paper Lead runs as three Docker services from one shared image (`ppl:v0.1.0`):
+Paper Lead runs as four Docker services from one shared image (`ppl:v0.1.0`).
+Recommended URLs go through the nginx proxy (port 80 — no ports to remember):
 
+- **proxy** — nginx entry point (port 80): `http://<host>/` → api,
+  `http://<host>/mcp` → mcp. `restart: unless-stopped`.
 - **api** — long-running REST KB API (port 8000). `restart: unless-stopped`,
   comes back by itself after a host reboot (docker.service is enabled).
 - **mcp** — MCP server for AI clients (port 9000, profile `mcp`). Same
@@ -104,7 +107,9 @@ Bumping the version: edit `image: ppl:vX.Y.Z` in **all three** services in
 
 ## Verification checklist
 
-- `docker ps` shows `paper-lead-api` Up (healthy) and `paper-lead-mcp` Up
+- `docker ps` shows `paper-lead-proxy`, `paper-lead-api` (healthy),
+  `paper-lead-mcp` all Up
+- `curl localhost:80/health` → ok (proxy path)
 - `curl localhost:8000/health` → `{"status":"ok","papers":2255,...}`
 - MCP client can initialize + list tools against `http://<ip>:9000/mcp`
 - `pytest tests/` passes (run on the host)
