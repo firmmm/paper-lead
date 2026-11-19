@@ -76,7 +76,7 @@ Auth: `X-API-Key` header, key in `.env` (`KB_API_KEY`; empty = auth off).
 Interactive docs at `/docs` (Swagger). DB is opened read-only (`mode=ro`),
 so the API can never corrupt the ingest pipeline.
 
-Data flow diagram: `docs/data-flow.html` (SVG in page) / `docs/data-flow.png`.
+Diagrams: `docs/data-flow.png` (system flow) · `docs/data-model.png` (KB schema).
 
 ## Microservices (Docker)
 
