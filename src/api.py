@@ -25,12 +25,13 @@ from typing import Iterator
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 _REPO = Path(__file__).parent.parent
 load_dotenv(_REPO / ".env")
 
 DB_PATH = os.getenv("PAPER_LEAD_DB_PATH", str(_REPO / "data" / "paper_lead.sqlite3"))
+DIGEST_DIR = Path(os.getenv("PAPER_LEAD_DIGEST_DIR", str(_REPO / "digest")))
 API_KEY = os.getenv("KB_API_KEY", "").strip()
 
 app = FastAPI(
@@ -170,10 +171,11 @@ def list_papers(
     to_: str | None = Query(None, alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$"),
     min_score: float = Query(0.0, ge=0.0, le=1.0),
     q: str | None = Query(None, description="FTS search over title+abstract"),
+    with_abstract: bool = Query(False, description="include full abstracts in list results"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    """List papers (metadata only; abstracts live on /papers/{id})."""
+    """List papers. Set with_abstract=1 to get full abstracts inline."""
     for value, name in ((date_, "date"), (from_, "from"), (to_, "to")):
         if value:
             _validate_date(value, name)
@@ -193,6 +195,10 @@ def list_papers(
         params.append(min_score)
     where = " AND ".join(clauses)
 
+    cols = "id, title, score, digest_date, url, published_date, authors"
+    if with_abstract:
+        cols += ", abstract"
+
     with connect_ro() as conn:
         if q:
             fts = _fts_query(q)
@@ -206,7 +212,8 @@ def list_papers(
                 where_part = (" AND " + " AND ".join("p." + c for c in real)) if real else ""
                 rows = conn.execute(
                     f"SELECT p.id, p.title, p.score, p.digest_date, p.url, "
-                    f"p.published_date, p.authors {base}{where_part} "
+                    f"p.published_date, p.authors{', p.abstract' if with_abstract else ''} "
+                    f"{base}{where_part} "
                     "ORDER BY papers_fts.rank LIMIT ? OFFSET ?",
                     [fts, *params, limit, offset],
                 ).fetchall()
@@ -217,28 +224,31 @@ def list_papers(
                 f"SELECT COUNT(*) FROM papers WHERE {where}", params
             ).fetchone()[0]
             rows = conn.execute(
-                "SELECT id, title, score, digest_date, url, published_date, authors "
+                f"SELECT {cols} "
                 f"FROM papers WHERE {where} "
                 "ORDER BY digest_date DESC, score DESC LIMIT ? OFFSET ?",
                 [*params, limit, offset],
             ).fetchall()
 
+    def to_item(r):
+        item = {
+            "id": r["id"],
+            "title": r["title"],
+            "score": r["score"],
+            "digest_date": r["digest_date"],
+            "url": r["url"],
+            "published_date": r["published_date"],
+            "authors": _authors(r["authors"]),
+        }
+        if with_abstract:
+            item["abstract"] = r["abstract"]
+        return item
+
     return {
         "total": total,
         "limit": limit,
         "offset": offset,
-        "results": [
-            {
-                "id": r["id"],
-                "title": r["title"],
-                "score": r["score"],
-                "digest_date": r["digest_date"],
-                "url": r["url"],
-                "published_date": r["published_date"],
-                "authors": _authors(r["authors"]),
-            }
-            for r in rows
-        ],
+        "results": [to_item(r) for r in rows],
     }
 
 
@@ -394,3 +404,120 @@ def search(
         "entries": [dict(e) for e in entries],
         "papers": [dict(p) for p in papers],
     }
+
+
+# ---------------------------------------------------------------- raw / export
+
+
+def _export_filters(from_: str | None, to_: str | None, min_score: float):
+    """Shared WHERE for export endpoints. Returns (where, params)."""
+    clauses, params = ["1=1"], []
+    if from_:
+        _validate_date(from_, "from")
+        clauses.append("digest_date >= ?")
+        params.append(from_)
+    if to_:
+        _validate_date(to_, "to")
+        clauses.append("digest_date <= ?")
+        params.append(to_)
+    if min_score > 0:
+        clauses.append("score >= ?")
+        params.append(min_score)
+    return " AND ".join(clauses), params
+
+
+@app.get("/export/papers.jsonl")
+def export_papers_jsonl(
+    from_: str | None = Query(None, alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    to_: str | None = Query(None, alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    min_score: float = Query(0.0, ge=0.0, le=1.0),
+):
+    """Raw dump of ALL papers (metadata + abstracts) as JSON Lines."""
+    where, params = _export_filters(from_, to_, min_score)
+
+    def gen():
+        with connect_ro() as conn:
+            cur = conn.execute(
+                "SELECT id, title, score, fetched_date, digest_date, published_date, "
+                f"url, authors, abstract FROM papers WHERE {where} "
+                "ORDER BY digest_date, id",
+                params,
+            )
+            for row in cur:
+                yield json.dumps(
+                    {
+                        "id": row["id"],
+                        "title": row["title"],
+                        "score": row["score"],
+                        "fetched_date": row["fetched_date"],
+                        "digest_date": row["digest_date"],
+                        "published_date": row["published_date"],
+                        "url": row["url"],
+                        "authors": _authors(row["authors"]),
+                        "abstract": row["abstract"],
+                    },
+                    ensure_ascii=False,
+                ) + "\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": 'attachment; filename="papers.jsonl"'},
+    )
+
+
+@app.get("/export/papers.csv")
+def export_papers_csv(
+    from_: str | None = Query(None, alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    to_: str | None = Query(None, alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    min_score: float = Query(0.0, ge=0.0, le=1.0),
+):
+    """Raw dump of ALL papers as CSV (abstract included as last column)."""
+    import csv
+    import io
+
+    where, params = _export_filters(from_, to_, min_score)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        ["id", "title", "score", "fetched_date", "digest_date", "published_date", "url", "authors", "abstract"]
+    )
+    with connect_ro() as conn:
+        cur = conn.execute(
+            "SELECT id, title, score, fetched_date, digest_date, published_date, "
+            f"url, authors, abstract FROM papers WHERE {where} "
+            "ORDER BY digest_date, id",
+            params,
+        )
+        for row in cur:
+            writer.writerow(
+                [
+                    row["id"],
+                    row["title"],
+                    row["score"],
+                    row["fetched_date"],
+                    row["digest_date"],
+                    row["published_date"],
+                    row["url"],
+                    row["authors"] or "",
+                    row["abstract"] or "",
+                ]
+            )
+    return Response(
+        buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="papers.csv"'},
+    )
+
+
+@app.get("/digests/{day}/raw")
+def get_digest_raw(day: str):
+    """Raw markdown of a daily digest file (as published)."""
+    _validate_date(day, "date")
+    path = DIGEST_DIR / f"{day}.md"
+    if not path.exists():
+        raise HTTPException(404, f"no digest file for {day}")
+    return Response(
+        path.read_text(encoding="utf-8"),
+        media_type="text/markdown; charset=utf-8",
+    )

@@ -21,6 +21,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data          # sqlite KB; api opens it mode=ro in code
+      - ./digest:/app/digest      # raw digest markdown for /digests/{day}/raw
       - ./.env:/app/.env:ro       # KB_API_KEY
     restart: unless-stopped
     healthcheck:

@@ -96,11 +96,14 @@ python3 -m uvicorn src.api:app --host 0.0.0.0 --port 8000
 |---|---|
 | `GET /health` | liveness + DB counts (no auth) |
 | `GET /stats` | global KB counters |
-| `GET /papers` | list/filter papers (`date`, `from`, `to`, `min_score`, `q` FTS) |
+| `GET /papers` | list/filter papers (`date`, `from`, `to`, `min_score`, `q` FTS, `with_abstract=1`) |
 | `GET /papers/{arxiv_id}` | one paper + abstract + its digest entries |
 | `GET /digests` | list digest days |
 | `GET /digests/{date}` | TL;DR + analyst note + entries by section |
+| `GET /digests/{date}/raw` | raw markdown of that day's digest |
 | `GET /search?q=` | FTS over Thai summaries + abstracts (`section` filter) |
+| `GET /export/papers.jsonl` | raw dump of ALL papers as JSON Lines |
+| `GET /export/papers.csv` | raw dump of ALL papers as CSV |
 
 Auth: `X-API-Key` header, key in `.env` (`KB_API_KEY`; empty = auth off).
 Interactive docs at `/docs` (Swagger). DB is opened read-only (`mode=ro`),
