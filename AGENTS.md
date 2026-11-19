@@ -2,7 +2,7 @@
 
 AI research digest agent: fetches papers (arXiv + HF Daily) → dedupes (SQLite) →
 ranks by keyword interest → summarizes via LLM → publishes (file/Slack/Discord).
-Full pipeline: `README.md`. Track A/B interface contract: `docs/SPEC.md`, `docs/TRACK_B.md`.
+Full pipeline + KB/API/microservices: `README.md`, deployment: `docs/DEPLOY.md`.
 
 ## Run it
 

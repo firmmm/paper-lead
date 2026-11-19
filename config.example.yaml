@@ -1,49 +1,38 @@
-# Paper Lead Configuration
+# Paper Lead — example config
+# Copy to config.yaml and edit (config.yaml is gitignored)
 
-sources:
-  arxiv:
-    categories:
-      - cs.AI
-      - cs.CL
-      - cs.LG
-    max_results: 50
+# arXiv categories to fetch
+categories:
+  - cs.AI
+  - cs.LG
+  - cs.CL
 
-  huggingface:
-    daily_papers: true
-    max_results: 30
+# fetch limits
+max_results: 100        # arXiv API: max papers per fetch
+max_papers: 20          # top-N papers sent to the LLM per day
 
-interests:
-  - LLM efficiency & quantization
-  - RAG & retrieval
-  - Thai NLP
-  - Agent frameworks
-  - Evaluation & benchmarking
-  - Fine-tuning & PEFT
-  - Multimodal models
+# date windows (empty = runtime defaults)
+date_from: ""           # arXiv: fetch papers published from this date (YYYY-MM-DD)
+hf_date: ""             # HuggingFace Daily Papers date (YYYY-MM-DD)
 
-# Relevance threshold (0-1)
-min_score: 0.5
+min_score: 0.1          # ranker relevance threshold (0-1)
 
-# LLM for summarization
+db_path: data/paper_lead.sqlite3
+interests_file: interests.yaml   # ranker keyword profile
+
 llm:
   provider: openai
-  model: GEMMA4-26B-A4B-it
+  model: GEMMA4-26B-A4B-IT
   base_url: https://gateway-llm.siam.ai
   fallbacks:
-    - GLM-5.2
+    - GLM-5.3
 
-# Digest output
-digest:
-  format: markdown
-  output_dir: digest/
-
-# Delivery
 delivery:
+  file: true
   # slack:
-  #   webhook: https://hooks.slack.com/...
+  #   webhook: https://hooks.slack.com/services/...
   # discord:
   #   webhook: https://discord.com/api/webhooks/...
-  file: true
 
-# SQLite for history (dedup)
-database: data/paper_lead.sqlite3
+digest:
+  output_dir: digest

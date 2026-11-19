@@ -11,50 +11,16 @@ Agent that fetches the latest AI papers daily, summarizes them, and delivers a d
 ## Architecture
 
 ```
-arXiv API --\
-             +--> Fetcher --> Ranker --> Summarizer --> Publisher --> Digest
-HF Daily ---/     (Track A)   (Track A)    (Track B)     (Track B)
-```
-
-## 2-Person Task Split
-
-| Track A - Paper Fetcher & Ranker | Track B - Summarizer & Publisher |
-|---|---|
-| Fetch papers from arXiv API + HuggingFace Daily Papers | Summarize papers via LLM |
-| Filter + score by relevance against interest profile | Categorize: Must Read / Worth Reading / Tools |
-| Store metadata in SQLite (dedup) | Generate digest markdown |
-| `src/fetcher.py`, `src/ranker.py` | `src/summarizer.py`, `src/publisher.py` |
-
-## Interface (JSON schema agreed by both tracks)
-
-```json
-// Track A sends to Track B:
-{
-  "date": "2026-06-18",
-  "papers": [
-    {
-      "id": "2306.xxxxx",
-      "title": "Mamba-3: Linear Attention at Scale",
-      "abstract": "...",
-      "authors": ["..."],
-      "url": "https://arxiv.org/abs/2306.xxxxx",
-      "score": 0.92,
-      "topics": ["architecture", "efficiency"]
-    }
-  ]
-}
-
-// Track B outputs digest markdown:
-{
-  "digest": "# Paper Lead - 2026-06-18\n...",
-  "stats": {
-    "total_fetched": 87,
-    "total_filtered": 12,
-    "must_read": 2,
-    "worth_reading": 7,
-    "tools": 3
-  }
-}
+arXiv + HF Daily Papers
+        │
+        ▼
+   Fetcher ──► Ranker ──► Summarizer ──► Publisher ──► digest/YYYY-MM-DD.md
+   (dedupe: SQLite)        (LLM, Thai)     (file + webhook)      │
+                                                             ▼
+                                              parse_digests ──► SQLite KB
+   papers_pdf/ ◄── fetch_pdfs (arXiv PDFs)                    │
+        │                                                      ▼
+        └────────────────► FastAPI KB API (read-only, port 8000)
 ```
 
 ## Quick Start
@@ -71,7 +37,7 @@ python src/main.py --config config.yaml --dry-run
 
 - `config.yaml` — main config (categories, LLM, delivery, thresholds)
 - `interests.yaml` — keyword profiles used by the ranker (edit this to tune what papers match)
-- `config.example.yaml` — template to copy when setting up
+- `config.example.yaml` — template to copy when setting up (matches the real config schema)
 
 See `config.example.yaml` and `interests.yaml` for available options.
 
