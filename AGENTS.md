@@ -39,3 +39,19 @@ Must run as `-m src.main` from repo root (`python src/main.py` fails: `ModuleNot
 ```bash
 pytest tests/
 ```
+
+## Knowledge Base (2026-11-19)
+
+- `src/parse_digests.py` — parses `digest/*.md` into `digest_days` + `digest_entries`
+  (+ `entries_fts`, `papers_fts`). Idempotent (delete+insert per date). Run as
+  `python3 -m src.parse_digests` (repo root). The OpenClaw daily cron runs it
+  automatically after each digest.
+- `src/api.py` — read-only FastAPI (uvicorn `src.api:app`, port 8000).
+  Key: `.env` `KB_API_KEY` (X-API-Key header). Not a systemd service — start
+  by hand or add a supervisor if it should survive reboots.
+- Tables `digest_days`/`digest_entries`/FTS are KB-owned; the cron digest job
+  is the only writer of `papers`. Parser writes KB tables right after.
+- Old-format digests handled: emoji section headers, `##` headers, bullet
+  entries (2026-10-31), italic `*Opinion:*`, analyst day-notes, double stats
+  footers (summarizer flavor wins).
+- `config.json.bak`, `src/digest/` (dead sample digest) removed 2026-11-19.

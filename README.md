@@ -79,6 +79,35 @@ See `config.example.yaml` and `interests.yaml` for available options.
 
 Digest saved as markdown in `digest/YYYY-MM-DD.md`
 
+## Knowledge Base + API
+
+The daily digests are parsed into SQLite (KB tables + FTS5) and served by a
+read-only FastAPI service:
+
+```bash
+# refresh KB tables from digest/*.md (also run automatically by the daily cron)
+python3 -m src.parse_digests
+
+# serve the API on port 8000
+python3 -m uvicorn src.api:app --host 0.0.0.0 --port 8000
+```
+
+| Endpoint | What |
+|---|---|
+| `GET /health` | liveness + DB counts (no auth) |
+| `GET /stats` | global KB counters |
+| `GET /papers` | list/filter papers (`date`, `from`, `to`, `min_score`, `q` FTS) |
+| `GET /papers/{arxiv_id}` | one paper + abstract + its digest entries |
+| `GET /digests` | list digest days |
+| `GET /digests/{date}` | TL;DR + analyst note + entries by section |
+| `GET /search?q=` | FTS over Thai summaries + abstracts (`section` filter) |
+
+Auth: `X-API-Key` header, key in `.env` (`KB_API_KEY`; empty = auth off).
+Interactive docs at `/docs` (Swagger). DB is opened read-only (`mode=ro`),
+so the API can never corrupt the ingest pipeline.
+
+Data flow diagram: `docs/data-flow.html` (SVG in page) / `docs/data-flow.png`.
+
 ## License
 
 MIT
