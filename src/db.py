@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -17,9 +18,21 @@ CREATE TABLE IF NOT EXISTS papers (
     title TEXT NOT NULL,
     fetched_date TEXT NOT NULL,
     score REAL NOT NULL,
-    digest_date TEXT
+    digest_date TEXT,
+    abstract TEXT,
+    authors TEXT,
+    url TEXT,
+    published_date TEXT
 );
 """
+
+# Columns added after the first release; existing DBs are migrated in-place.
+MIGRATION_SQL = {
+    "abstract": "ALTER TABLE papers ADD COLUMN abstract TEXT",
+    "authors": "ALTER TABLE papers ADD COLUMN authors TEXT",
+    "url": "ALTER TABLE papers ADD COLUMN url TEXT",
+    "published_date": "ALTER TABLE papers ADD COLUMN published_date TEXT",
+}
 
 
 def _coerce_db_path(db_path: str | os.PathLike | None = None) -> Path:
@@ -48,6 +61,15 @@ def _connect(db_path: str | os.PathLike | None = None):
 def init_db(db_path: str | os.PathLike | None = None) -> None:
     with _connect(db_path) as conn:
         conn.executescript(SCHEMA_SQL)
+        _migrate_schema(conn)
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the initial schema (idempotent)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(papers)")}
+    for column, sql in MIGRATION_SQL.items():
+        if column not in cols:
+            conn.execute(sql)
 
 
 def _today_iso() -> str:
@@ -65,6 +87,10 @@ def mark_seen(
     paper_or_id,
     score: float | None = None,
     title: str | None = None,
+    abstract: str | None = None,
+    authors: list[str] | None = None,
+    url: str | None = None,
+    published_date: str | None = None,
     fetched_date: str | date | datetime | None = None,
     digest_date: str | date | datetime | None = None,
     db_path: str | os.PathLike | None = None,
@@ -72,10 +98,17 @@ def mark_seen(
     init_db(db_path)
 
     if hasattr(paper_or_id, "id"):
-        paper_id = getattr(paper_or_id, "id")
-        title = title or getattr(paper_or_id, "title", "")
+        paper = paper_or_id
+        paper_id = paper.id
+        title = title or getattr(paper, "title", "")
+        abstract = abstract if abstract is not None else getattr(paper, "abstract", None)
+        authors = authors if authors is not None else getattr(paper, "authors", None)
+        url = url if url is not None else getattr(paper, "url", None)
+        published_date = (
+            published_date if published_date is not None else getattr(paper, "published_date", None)
+        )
         if score is None:
-            score = float(getattr(paper_or_id, "score", 0.0))
+            score = float(getattr(paper, "score", 0.0))
     else:
         paper_id = str(paper_or_id)
 
@@ -103,15 +136,30 @@ def mark_seen(
     with _connect(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO papers (id, title, fetched_date, score, digest_date)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO papers (id, title, fetched_date, score, digest_date,
+                                abstract, authors, url, published_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 fetched_date = excluded.fetched_date,
                 score = excluded.score,
-                digest_date = COALESCE(excluded.digest_date, papers.digest_date)
+                digest_date = COALESCE(excluded.digest_date, papers.digest_date),
+                abstract = COALESCE(excluded.abstract, papers.abstract),
+                authors = COALESCE(excluded.authors, papers.authors),
+                url = COALESCE(excluded.url, papers.url),
+                published_date = COALESCE(excluded.published_date, papers.published_date)
             """,
-            (paper_id, title or "", fetched_date_str, float(score), digest_date_str),
+            (
+                paper_id,
+                title or "",
+                fetched_date_str,
+                float(score),
+                digest_date_str,
+                (abstract or "").strip() or None,
+                json.dumps(authors) if authors else None,
+                (url or "").strip() or None,
+                (published_date or "").strip() or None,
+            ),
         )
 
 
@@ -148,18 +196,37 @@ def mark_seen_many(
             paper_id = getattr(paper, "id", str(paper))
             title = getattr(paper, "title", "")
             score = float(getattr(paper, "score", 0.0))
+            abstract = getattr(paper, "abstract", None)
+            authors = getattr(paper, "authors", None)
+            url = getattr(paper, "url", None)
+            published_date = getattr(paper, "published_date", None)
             fetched_date_str = _today_iso()
             digest_date_str = _today_iso()
 
             conn.execute(
                 """
-                INSERT INTO papers (id, title, fetched_date, score, digest_date)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO papers (id, title, fetched_date, score, digest_date,
+                                    abstract, authors, url, published_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     fetched_date = excluded.fetched_date,
                     score = excluded.score,
-                    digest_date = COALESCE(excluded.digest_date, papers.digest_date)
+                    digest_date = COALESCE(excluded.digest_date, papers.digest_date),
+                    abstract = COALESCE(excluded.abstract, papers.abstract),
+                    authors = COALESCE(excluded.authors, papers.authors),
+                    url = COALESCE(excluded.url, papers.url),
+                    published_date = COALESCE(excluded.published_date, papers.published_date)
                 """,
-                (paper_id, title or "", fetched_date_str, score, digest_date_str),
+                (
+                    paper_id,
+                    title or "",
+                    fetched_date_str,
+                    score,
+                    digest_date_str,
+                    (abstract or "").strip() or None,
+                    json.dumps(authors) if authors else None,
+                    (url or "").strip() or None,
+                    (published_date or "").strip() or None,
+                ),
             )

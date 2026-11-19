@@ -209,10 +209,9 @@ def main():
     # This prevents papers from being lost if publishing fails
     if publish_success:
         for paper in ranked_papers:
+            # Pass the paper object so abstract/authors/url/published_date persist
             db.mark_seen(
-                paper_or_id=paper.id,
-                score=paper.score,
-                title=paper.title,
+                paper_or_id=paper,
                 digest_date=date.today().isoformat(),
                 db_path=config.db_path,
             )
